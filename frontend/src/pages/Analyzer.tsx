@@ -79,6 +79,11 @@ export default function Analyzer() {
     const [p1NeedsUpdate, setP1NeedsUpdate] = useState(false)
     const [p2NeedsUpdate, setP2NeedsUpdate] = useState(false)
 
+    const p1Name = Form.useWatch('player1_name', form)
+    const p2Name = Form.useWatch('player2_name', form)
+    const p1Birth = Form.useWatch('player1_birthdate', form)
+    const p2Birth = Form.useWatch('player2_birthdate', form)
+
     // Track "selected" name so we can unlock if user edits it
     const p1SelectedNameRef = useRef<string>("")
     const p2SelectedNameRef = useRef<string>("")
@@ -386,7 +391,7 @@ export default function Analyzer() {
                                         <Space>
                                             Player 1 Birthdate
                                             {p1BirthLocked && <Text type="secondary">(auto-filled)</Text>}
-                                            {!p1BirthLocked && !p1HasDbRecord && form.getFieldValue('player1_name') && form.getFieldValue('player1_birthdate') && (
+                                            {!p1BirthLocked && !p1HasDbRecord && p1Name && p1Birth && (
                                                 <Button size="small" type="link" onClick={() => addManualPlayer('player1')}>
                                                     Add Player
                                                 </Button>
@@ -432,7 +437,7 @@ export default function Analyzer() {
                                         <Space>
                                             Player 2 Birthdate
                                             {p2BirthLocked && <Text type="secondary">(auto-filled)</Text>}
-                                            {!p2BirthLocked && !p2HasDbRecord && form.getFieldValue('player2_name') && form.getFieldValue('player2_birthdate') && (
+                                            {!p2BirthLocked && !p2HasDbRecord && p2Name && p2Birth && (
                                                 <Button size="small" type="link" onClick={() => addManualPlayer('player2')}>
                                                     Add Player
                                                 </Button>

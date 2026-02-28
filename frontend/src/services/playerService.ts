@@ -27,6 +27,7 @@ export type ResolvePlayerResponse = {
 export function resolvePlayer(name: string, sport: string) {
   return apiRequest<ResolvePlayerResponse>(`/api/v1/players/resolve`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, sport }),
   })
 }
@@ -34,6 +35,7 @@ export function resolvePlayer(name: string, sport: string) {
 export function addPlayer(name: string, sport: string, birthdate: string) {
   return apiRequest<ResolvePlayerResponse>(`/api/v1/players/add`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, sport, birthdate }),
   })
 }
