@@ -213,7 +213,7 @@ function Dashboard() {
         style={{ marginBottom: 16 }}
         type='info'
         showIcon
-        message={`Current tier: ${tier.toUpperCase()} · API keys: ${apiKeys.filter(k => k.active).length}/${keyLimit}`}
+        message={`Current tier: ${tier.toUpperCase()} · API keys: ${apiKeys.filter(k => k.active).length} / ${keyLimit}`}
         description={tier === 'pro' ? 'Pro includes unlimited API keys and a 1000/day soft cap with fair-use policy.' : undefined}
       />
 

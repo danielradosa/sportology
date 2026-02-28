@@ -976,6 +976,19 @@ def add_player(request: AddPlayerRequest, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=409, detail="Player already exists")
 
+    # Verify via Wikidata before allowing manual add
+    sport_keyword = "tennis player" if sport == "tennis" else "table tennis"
+    results = _wikidata_search(name, sport_keyword)
+    if not results:
+        results = _wikidata_search(name, "")
+    entity_id = _pick_entity(results, sport_keyword)
+    if not entity_id:
+        raise HTTPException(status_code=404, detail="Player not found on Wikidata")
+
+    entity = _wikidata_get(entity_id)
+    if not _is_human_sport_entity(entity, sport):
+        raise HTTPException(status_code=400, detail="Name does not match a valid player")
+
     player = Player(
         name=name,
         name_norm=name_norm,
