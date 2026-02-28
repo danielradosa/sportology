@@ -195,6 +195,19 @@ class DemoRequest(BaseModel):
     match_date: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
     sport: str = Field(default="tennis", pattern=r'^(tennis|table-tennis)$')
 
+class ResolvePlayerRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    sport: str = Field(default="tennis", pattern=r'^(tennis|table-tennis)$')
+
+class ResolvePlayerResponse(BaseModel):
+    id: int
+    name: str
+    birthdate: str
+    sport: str
+    country: Optional[str] = None
+    updated: Optional[bool] = False
+    created: Optional[bool] = False
+
 # Startup event
 @app.on_event("startup")
 async def startup_event():
@@ -953,6 +966,75 @@ def get_player(player_id: int, db: Session = Depends(get_db)):
         "birthdate": player.birthdate,
         "sport": player.sport,
         "country": player.country
+    }
+
+
+@app.post("/api/v1/players/resolve", response_model=ResolvePlayerResponse)
+def resolve_player(request: ResolvePlayerRequest, db: Session = Depends(get_db)):
+    name = request.name.strip()
+    sport = request.sport.strip()
+    if not name or not sport:
+        raise HTTPException(status_code=400, detail="name and sport are required")
+
+    name_norm = normalize_name(name)
+    existing = db.query(Player).filter(Player.sport == sport, Player.name_norm == name_norm).first()
+
+    sport_keyword = "tennis player" if sport == "tennis" else "table tennis"
+    results = _wikidata_search(name, sport_keyword)
+    if not results:
+        results = _wikidata_search(name, "")
+    entity_id = _pick_entity(results, sport_keyword)
+    if not entity_id:
+        raise HTTPException(status_code=404, detail="Player not found on Wikidata")
+
+    entity = _wikidata_get(entity_id)
+    if not _is_human_sport_entity(entity, sport):
+        raise HTTPException(status_code=404, detail="No matching player found")
+
+    birthdate = _extract_birthdate(entity)
+    if not birthdate:
+        raise HTTPException(status_code=404, detail="Birthdate not found")
+
+    country = _extract_country(entity)
+
+    updated = False
+    created = False
+
+    if existing:
+        if existing.birthdate != birthdate:
+            existing.birthdate = birthdate
+            updated = True
+        if country and existing.country != country:
+            existing.country = country
+            updated = True
+        if existing.name != name:
+            existing.name = name
+            existing.name_norm = name_norm
+            updated = True
+        if updated:
+            db.commit()
+        player = existing
+    else:
+        player = Player(
+            name=name,
+            name_norm=name_norm,
+            birthdate=birthdate,
+            sport=sport,
+            country=country,
+        )
+        db.add(player)
+        db.commit()
+        db.refresh(player)
+        created = True
+
+    return {
+        "id": player.id,
+        "name": player.name,
+        "birthdate": player.birthdate,
+        "sport": player.sport,
+        "country": player.country,
+        "updated": updated,
+        "created": created,
     }
 
 def normalize_name(name: str) -> str:

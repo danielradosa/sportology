@@ -26,7 +26,7 @@ import { useAuthStore } from "../hooks/useAuth"
 import type { ApiKey, MatchAnalysisResponse, MatchAnalysisRequest } from "../types"
 import * as apiKeyService from '../services/apiKeyService'
 import { analyzeMatch } from '../services/analysisService'
-import { searchPlayers, type PlayerSuggestion } from '../services/playerService'
+import { searchPlayers, resolvePlayer, type PlayerSuggestion } from '../services/playerService'
 import { ApiError } from '../services/apiClient'
 import { getUsageStats, type UsageStats } from '../services/usageService'
 
@@ -74,6 +74,10 @@ export default function Analyzer() {
     // --- Birthdate lock state ---
     const [p1BirthLocked, setP1BirthLocked] = useState(false)
     const [p2BirthLocked, setP2BirthLocked] = useState(false)
+    const [p1HasDbRecord, setP1HasDbRecord] = useState(false)
+    const [p2HasDbRecord, setP2HasDbRecord] = useState(false)
+    const [p1NeedsUpdate, setP1NeedsUpdate] = useState(false)
+    const [p2NeedsUpdate, setP2NeedsUpdate] = useState(false)
 
     // Track "selected" name so we can unlock if user edits it
     const p1SelectedNameRef = useRef<string>("")
@@ -153,6 +157,8 @@ export default function Analyzer() {
             form.setFieldsValue({ player1_birthdate: dayjs(p.birthdate, "YYYY-MM-DD") })
             setP1BirthLocked(true)
             p1SelectedNameRef.current = p.name
+            setP1HasDbRecord(true)
+            setP1NeedsUpdate(false)
         }
     }
 
@@ -162,6 +168,41 @@ export default function Analyzer() {
             form.setFieldsValue({ player2_birthdate: dayjs(p.birthdate, "YYYY-MM-DD") })
             setP2BirthLocked(true)
             p2SelectedNameRef.current = p.name
+            setP2HasDbRecord(true)
+            setP2NeedsUpdate(false)
+        }
+    }
+
+    const resolveBirthdate = async (field: 'player1' | 'player2') => {
+        const sport = form.getFieldValue('sport') || 'tennis'
+        const name = form.getFieldValue(field === 'player1' ? 'player1_name' : 'player2_name')
+        if (!name) {
+            message.error('Enter a player name first')
+            return
+        }
+        try {
+            const res = await resolvePlayer(name, sport)
+            const birthdate = dayjs(res.birthdate, 'YYYY-MM-DD')
+            if (field === 'player1') {
+                form.setFieldsValue({ player1_birthdate: birthdate })
+                setP1BirthLocked(true)
+                p1SelectedNameRef.current = res.name
+                setP1HasDbRecord(true)
+                setP1NeedsUpdate(!!res.updated)
+            } else {
+                form.setFieldsValue({ player2_birthdate: birthdate })
+                setP2BirthLocked(true)
+                p2SelectedNameRef.current = res.name
+                setP2HasDbRecord(true)
+                setP2NeedsUpdate(!!res.updated)
+            }
+            if (res.created) message.success('Player added to database')
+            else if (res.updated) message.info('Player updated from Wikidata')
+            else message.success('DOB resolved')
+
+            // if updated, keep the button label in mind (UI already shows update state)
+        } catch (e: any) {
+            message.error('Could not resolve DOB')
         }
     }
 
@@ -169,6 +210,8 @@ export default function Analyzer() {
     const handlePlayer1NameChange = (val: string) => {
         if (p1BirthLocked && val !== p1SelectedNameRef.current) {
             setP1BirthLocked(false)
+            setP1HasDbRecord(false)
+            setP1NeedsUpdate(false)
             p1SelectedNameRef.current = ""
             form.setFieldsValue({ player1_birthdate: null })
         }
@@ -177,6 +220,8 @@ export default function Analyzer() {
     const handlePlayer2NameChange = (val: string) => {
         if (p2BirthLocked && val !== p2SelectedNameRef.current) {
             setP2BirthLocked(false)
+            setP2HasDbRecord(false)
+            setP2NeedsUpdate(false)
             p2SelectedNameRef.current = ""
             form.setFieldsValue({ player2_birthdate: null })
         }
@@ -189,6 +234,8 @@ export default function Analyzer() {
         // sport change invalidates player selection (since DB is sport scoped)
         setP1BirthLocked(false)
         setP2BirthLocked(false)
+        setP1HasDbRecord(false)
+        setP2HasDbRecord(false)
         p1SelectedNameRef.current = ""
         p2SelectedNameRef.current = ""
 
@@ -314,6 +361,16 @@ export default function Analyzer() {
                                         <Space>
                                             Player 1 Birthdate
                                             {p1BirthLocked && <Text type="secondary">(auto-filled)</Text>}
+                                            {!p1BirthLocked && (
+                                                <Button size="small" type="link" onClick={() => resolveBirthdate('player1')}>
+                                                    {p1HasDbRecord ? 'Fetch DOB' : 'Add Player'}
+                                                </Button>
+                                            )}
+                                            {p1HasDbRecord && p1NeedsUpdate && (
+                                                <Button size="small" type="link" onClick={() => resolveBirthdate('player1')}>
+                                                    Update DOB
+                                                </Button>
+                                            )}
                                         </Space>
                                     }
                                     name="player1_birthdate"
@@ -345,6 +402,16 @@ export default function Analyzer() {
                                         <Space>
                                             Player 2 Birthdate
                                             {p2BirthLocked && <Text type="secondary">(auto-filled)</Text>}
+                                            {!p2BirthLocked && (
+                                                <Button size="small" type="link" onClick={() => resolveBirthdate('player2')}>
+                                                    {p2HasDbRecord ? 'Fetch DOB' : 'Add Player'}
+                                                </Button>
+                                            )}
+                                            {p2HasDbRecord && p2NeedsUpdate && (
+                                                <Button size="small" type="link" onClick={() => resolveBirthdate('player2')}>
+                                                    Update DOB
+                                                </Button>
+                                            )}
                                         </Space>
                                     }
                                     name="player2_birthdate"
