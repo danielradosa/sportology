@@ -206,6 +206,7 @@ class ResolvePlayerResponse(BaseModel):
     sport: str
     updated: Optional[bool] = False
     created: Optional[bool] = False
+    verified: Optional[bool] = False
 
 class AddPlayerRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
@@ -938,8 +939,9 @@ def resolve_player(request: ResolvePlayerRequest, db: Session = Depends(get_db))
             existing.name = name
             existing.name_norm = name_norm
             updated = True
-        if updated:
-            db.commit()
+        existing.verified = True
+        updated = True
+        db.commit()
         player = existing
     else:
         player = Player(
@@ -947,6 +949,7 @@ def resolve_player(request: ResolvePlayerRequest, db: Session = Depends(get_db))
             name_norm=name_norm,
             birthdate=birthdate,
             sport=sport,
+            verified=True,
         )
         db.add(player)
         db.commit()
@@ -960,6 +963,7 @@ def resolve_player(request: ResolvePlayerRequest, db: Session = Depends(get_db))
         "sport": player.sport,
         "updated": updated,
         "created": created,
+        "verified": player.verified,
     }
 
 
@@ -976,24 +980,27 @@ def add_player(request: AddPlayerRequest, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=409, detail="Player already exists")
 
-    # Verify via Wikidata before allowing manual add
-    sport_keyword = "tennis player" if sport == "tennis" else "table tennis"
-    results = _wikidata_search(name, sport_keyword)
-    if not results:
-        results = _wikidata_search(name, "")
-    entity_id = _pick_entity(results, sport_keyword)
-    if not entity_id:
-        raise HTTPException(status_code=400, detail="Not a valid player")
-
-    entity = _wikidata_get(entity_id)
-    if not _is_human_sport_entity(entity, sport):
-        raise HTTPException(status_code=400, detail="Not a valid player")
+    # Verify via Wikidata; if fails, mark unverified but allow add
+    verified = False
+    try:
+        sport_keyword = "tennis player" if sport == "tennis" else "table tennis"
+        results = _wikidata_search(name, sport_keyword)
+        if not results:
+            results = _wikidata_search(name, "")
+        entity_id = _pick_entity(results, sport_keyword)
+        if entity_id:
+            entity = _wikidata_get(entity_id)
+            if _is_human_sport_entity(entity, sport):
+                verified = True
+    except Exception:
+        verified = False
 
     player = Player(
         name=name,
         name_norm=name_norm,
         birthdate=birthdate,
         sport=sport,
+        verified=verified,
     )
     db.add(player)
     db.commit()
@@ -1005,7 +1012,42 @@ def add_player(request: AddPlayerRequest, db: Session = Depends(get_db)):
         "birthdate": player.birthdate,
         "sport": player.sport,
         "created": True,
+        "verified": player.verified,
     }
+
+
+@app.get("/admin/unverified-players")
+def list_unverified_players(request: Request, db: Session = Depends(get_db)):
+    admin_key = request.headers.get("X-Admin-Key")
+    expected_key = os.getenv("ADMIN_KEY")
+    if not expected_key:
+        raise HTTPException(status_code=500, detail="ADMIN_KEY not configured")
+    if admin_key != expected_key:
+        raise HTTPException(status_code=401, detail="Invalid admin key")
+
+    players = db.query(Player).filter(Player.verified == False).limit(200).all()
+    return [
+        {"id": p.id, "name": p.name, "birthdate": p.birthdate, "sport": p.sport, "verified": p.verified}
+        for p in players
+    ]
+
+
+@app.post("/admin/unverified-players/{player_id}/verify")
+def verify_player(player_id: int, request: Request, db: Session = Depends(get_db)):
+    admin_key = request.headers.get("X-Admin-Key")
+    expected_key = os.getenv("ADMIN_KEY")
+    if not expected_key:
+        raise HTTPException(status_code=500, detail="ADMIN_KEY not configured")
+    if admin_key != expected_key:
+        raise HTTPException(status_code=401, detail="Invalid admin key")
+
+    player = db.query(Player).filter(Player.id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    player.verified = True
+    db.commit()
+    return {"message": "Player verified", "id": player.id}
 
 def normalize_name(name: str) -> str:
     name = unicodedata.normalize("NFKD", name)

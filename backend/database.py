@@ -71,6 +71,7 @@ class Player(Base):
     name_norm = Column(String(120), nullable=False, index=True)
     birthdate = Column(String(10), nullable=True)  # YYYY-MM-DD
     sport = Column(String(50), nullable=False)      # tennis, table-tennis, etc.
+    verified = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class UserIPClaim(Base):
@@ -111,6 +112,18 @@ def ensure_schema_updates():
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE users ADD COLUMN plan_tier VARCHAR(20) DEFAULT 'free'"))
             conn.execute(text("UPDATE users SET plan_tier='free' WHERE plan_tier IS NULL"))
+
+    # add players.verified if missing (postgres only)
+    if "players" in insp.get_table_names():
+        cols_players = {c["name"] for c in insp.get_columns("players")}
+        if "verified" not in cols_players:
+            try:
+                db_url = str(engine.url)
+                if db_url.startswith("postgres"):
+                    with engine.begin() as conn:
+                        conn.execute(text("ALTER TABLE players ADD COLUMN verified BOOLEAN DEFAULT FALSE"))
+            except Exception:
+                pass
 
 def get_db():
     db = SessionLocal()

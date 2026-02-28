@@ -45,6 +45,7 @@ function AppHeader() {
             label: <Link to='/analyzer'>Analyzer</Link>,
           },
           { key: '/bot', icon: <RobotOutlined />, label: <Link to='/bot'>Bot</Link> },
+          { key: '/admin/players', icon: <UserOutlined />, label: <Link to='/admin/players'>Admin</Link> },
         ]
       : []),
   ]
