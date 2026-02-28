@@ -983,11 +983,11 @@ def add_player(request: AddPlayerRequest, db: Session = Depends(get_db)):
         results = _wikidata_search(name, "")
     entity_id = _pick_entity(results, sport_keyword)
     if not entity_id:
-        raise HTTPException(status_code=404, detail="Player not found on Wikidata")
+        raise HTTPException(status_code=400, detail="Not a valid player")
 
     entity = _wikidata_get(entity_id)
     if not _is_human_sport_entity(entity, sport):
-        raise HTTPException(status_code=400, detail="Name does not match a valid player")
+        raise HTTPException(status_code=400, detail="Not a valid player")
 
     player = Player(
         name=name,
@@ -1087,21 +1087,34 @@ def _is_human_sport_entity(entity: dict, sport: str) -> bool:
             return False
     else:
         return False
-    # P106: occupation (required)
-    if "P106" not in claims:
-        return False
+
+    # Accept if occupation matches OR sport (P641) matches
     occupation_ids = []
-    for c in claims["P106"]:
-        try:
-            occupation_ids.append(c["mainsnak"]["datavalue"]["value"]["id"])
-        except Exception:
-            continue
+    if "P106" in claims:
+        for c in claims["P106"]:
+            try:
+                occupation_ids.append(c["mainsnak"]["datavalue"]["value"]["id"])
+            except Exception:
+                continue
+
+    sport_ids = []
+    if "P641" in claims:
+        for c in claims["P641"]:
+            try:
+                sport_ids.append(c["mainsnak"]["datavalue"]["value"]["id"])
+            except Exception:
+                continue
+
     # tennis player Q10833314, table tennis player Q1700471
-    if sport == "tennis" and "Q10833314" not in occupation_ids:
+    if sport == "tennis":
+        if "Q10833314" in occupation_ids or "Q847" in sport_ids:
+            return True
         return False
-    if sport == "table-tennis" and "Q1700471" not in occupation_ids:
+    if sport == "table-tennis":
+        if "Q1700471" in occupation_ids or "Q64667" in sport_ids:
+            return True
         return False
-    return True
+    return False
 
 
 def resolve_birthdate(name: str, sport: str, db: Session) -> Optional[str]:

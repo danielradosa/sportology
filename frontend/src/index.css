@@ -146,6 +146,31 @@ body {
   .page-container .ant-card {
     margin-bottom: 16px;
   }
+}
+
+.confidence-tag {
+  border: none;
+  color: #ffffff;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 transparent;
+}
+
+.confidence-weak {
+  background: linear-gradient(135deg, #ff5b7f 0%, #ff2d55 100%);
+  box-shadow: 0 0 14px rgba(255, 45, 85, 0.35);
+}
+
+.confidence-moderate {
+  background: linear-gradient(135deg, #ffb84d 0%, #ff8a00 100%);
+  box-shadow: 0 0 18px rgba(255, 138, 0, 0.45);
+}
+
+.confidence-strong {
+  background: linear-gradient(135deg, #7b2ff7 0%, #3b0ca3 100%);
+  box-shadow: 0 0 24px rgba(123, 47, 247, 0.55);
+}
 
   .page-container .ant-card:last-child {
     margin-bottom: 0;

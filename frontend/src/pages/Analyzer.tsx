@@ -17,6 +17,7 @@ import {
     AutoComplete,
     Progress,
     Grid,
+    Tag,
 } from "antd"
 import { InfoCircleOutlined, DotChartOutlined, CaretUpOutlined } from "@ant-design/icons"
 import dayjs from "dayjs"
@@ -277,6 +278,26 @@ export default function Analyzer() {
         })
     }
 
+    const confidenceBadge = (confidence?: string) => {
+        const value = String(confidence || '').replace('_', ' ').toLowerCase()
+        if (value.includes('strong')) {
+            return (
+                <Tag className="confidence-tag confidence-strong">Strong</Tag>
+            )
+        }
+        if (value.includes('moderate')) {
+            return (
+                <Tag className="confidence-tag confidence-moderate">Moderate</Tag>
+            )
+        }
+        if (value.includes('weak')) {
+            return (
+                <Tag className="confidence-tag confidence-weak">Weak</Tag>
+            )
+        }
+        return value ? <Tag>{value}</Tag> : null
+    }
+
     const onFinish = async (values: AnalyzeFormValues) => {
         setLoading(true)
         setError(null)
@@ -392,7 +413,7 @@ export default function Analyzer() {
                                             {p1BirthLocked && <Text type="secondary">(auto-filled)</Text>}
                                             {!p1BirthLocked && !p1HasDbRecord && p1Name && p1Birth && (
                                                 <Button size="small" type="link" onClick={() => addManualPlayer('player1')}>
-                                                    Add Player
+                                                    Save Player
                                                 </Button>
                                             )}
                                             {!p1BirthLocked && p1HasDbRecord && (
@@ -438,7 +459,7 @@ export default function Analyzer() {
                                             {p2BirthLocked && <Text type="secondary">(auto-filled)</Text>}
                                             {!p2BirthLocked && !p2HasDbRecord && p2Name && p2Birth && (
                                                 <Button size="small" type="link" onClick={() => addManualPlayer('player2')}>
-                                                    Add Player
+                                                    Save Player
                                                 </Button>
                                             )}
                                             {!p2BirthLocked && p2HasDbRecord && (
@@ -487,7 +508,9 @@ export default function Analyzer() {
                     <Card style={{ marginBottom: 16 }} type='inner'>
                         <Space direction='vertical' style={{ width: '100%' }} size={8}>
                             <Text strong style={{ fontSize: 16 }}>Pick: {result.winner_prediction}</Text>
-                            <Text>Confidence: {String(result.confidence || '').replace('_', ' ')}</Text>
+                            <Text>
+                                Confidence: {confidenceBadge(result.confidence)}
+                            </Text>
                             <Text type='secondary'>Score delta: <CaretUpOutlined /> {result.score_difference}</Text>
                         </Space>
                     </Card>
