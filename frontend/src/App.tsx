@@ -38,7 +38,7 @@ function App() {
                   <Route path='/dashboard' element={<Dashboard />} />
                   <Route path='/analyzer' element={<Analyzer />} />
                   <Route path='/bot' element={<Bot />} />
-                  <Route path='/admin/players' element={<AdminPlayers />} />
+                  <Route path='/admin-ui/players' element={<AdminPlayers />} />
                 </Routes>
               </Suspense>
             </div>
