@@ -11,8 +11,8 @@ type UnverifiedPlayer = {
   verified: boolean
 }
 
-const AdminPlayers = () => {
-  const [adminKey, setAdminKey] = useState(() => localStorage.getItem('admin_key') || '')
+const AdminPlayers = ({ adminKey: adminKeyProp }: { adminKey?: string }) => {
+  const [adminKey, setAdminKey] = useState(() => adminKeyProp || localStorage.getItem('admin_key') || '')
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<UnverifiedPlayer[]>([])
   const [editing, setEditing] = useState<UnverifiedPlayer | null>(null)
@@ -158,6 +158,12 @@ const AdminPlayers = () => {
       message.error('Failed to update')
     }
   }
+
+  useEffect(() => {
+    if (adminKeyProp && adminKeyProp !== adminKey) {
+      setAdminKey(adminKeyProp)
+    }
+  }, [adminKeyProp])
 
   useEffect(() => {
     if (adminKey) load()

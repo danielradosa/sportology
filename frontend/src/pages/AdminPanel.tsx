@@ -34,7 +34,7 @@ const AdminPanel = () => {
         ]}
         style={{ marginBottom: 16 }}
       />
-      {view === 'players' ? <AdminPlayers /> : <AdminUsers />}
+      {view === 'players' ? <AdminPlayers adminKey={adminKey} /> : <AdminUsers adminKey={adminKey} />}
 
       <Modal open={showKeyModal} title='Admin key required' footer={null} closable={false}>
         <Space direction='vertical' style={{ width: '100%' }}>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button, Input, Select, Space, Table, message, Popconfirm, Modal } from 'antd'
 import * as XLSX from 'xlsx'
 import type { ColumnsType } from 'antd/es/table'
@@ -12,8 +12,8 @@ type UserRow = {
 
 const tiers = ['free', 'starter', 'pro']
 
-const AdminUsers = () => {
-  const [adminKey, setAdminKey] = useState(() => localStorage.getItem('admin_key') || '')
+const AdminUsers = ({ adminKey: adminKeyProp }: { adminKey?: string }) => {
+  const [adminKey, setAdminKey] = useState(() => adminKeyProp || localStorage.getItem('admin_key') || '')
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<UserRow[]>([])
   const [editing, setEditing] = useState<UserRow | null>(null)
@@ -141,6 +141,16 @@ const AdminUsers = () => {
   const filteredData = data.filter((u) =>
     u.email.toLowerCase().includes(search.toLowerCase()) || u.plan_tier.includes(search.toLowerCase())
   )
+
+  useEffect(() => {
+    if (adminKeyProp && adminKeyProp !== adminKey) {
+      setAdminKey(adminKeyProp)
+    }
+  }, [adminKeyProp])
+
+  useEffect(() => {
+    if (adminKey) load()
+  }, [adminKey])
 
   const columns: ColumnsType<UserRow> = [
     { title: 'Email', dataIndex: 'email', key: 'email' },

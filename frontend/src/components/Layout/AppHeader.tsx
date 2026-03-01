@@ -30,6 +30,8 @@ function AppHeader() {
     navigate('/')
   }
 
+  const adminEmail = import.meta.env.VITE_ADMIN_EMAIL
+
   const menuItems = [
     { key: '/', icon: <HomeOutlined />, label: <Link to='/'>Home</Link> },
     ...(isAuthenticated
@@ -45,7 +47,7 @@ function AppHeader() {
             label: <Link to='/analyzer'>Analyzer</Link>,
           },
           { key: '/bot', icon: <RobotOutlined />, label: <Link to='/bot'>Bot</Link> },
-          ...(user?.email === '28@danielradosa.com'
+          ...(adminEmail && user?.email === adminEmail
             ? [
                 { key: '/admin-ui', icon: <UserOutlined />, label: <Link to='/admin-ui'>Admin</Link> },
               ]
