@@ -44,7 +44,7 @@ function App() {
             </div>
           </Content>
           <Footer className='app-footer'>
-            © {new Date().getFullYear()} · SPORTOLOGY + API by{' '}
+            © {new Date().getFullYear()} · SAPI | SPORTOLOGY + API by{' '}
             <a href='https://danielradosa.com' target='_blank' rel='noreferrer'>
               Daniel Radosa
             </a>

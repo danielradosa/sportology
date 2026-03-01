@@ -36,7 +36,7 @@ function Home() {
   return (
     <Space direction='vertical' size={20} style={{ width: '100%' }}>
       <Card>
-        <Title style={{ marginBottom: 6 }}>🔮 SPORTOLOGY</Title>
+        <Title style={{ marginBottom: 6 }}>🔮 SAPI | SPORTOLOGY + API</Title>
         <Paragraph style={{ fontSize: 16, maxWidth: 740, marginBottom: 0 }}>
           Numerology-first matchup analysis for tennis and table-tennis. Enter two opponents and date,
           then get confidence, score spread and sizing guidance in seconds.

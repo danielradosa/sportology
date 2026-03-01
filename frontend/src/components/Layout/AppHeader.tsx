@@ -79,7 +79,7 @@ function AppHeader() {
     <Header className='app-header'>
       <div className='brand-wrap'>
         <Link to='/' className='brand-link'>
-          🔮 SPORTOLOGY
+          🔮 SAPI | SPORTOLOGY + API
         </Link>
       </div>
 
