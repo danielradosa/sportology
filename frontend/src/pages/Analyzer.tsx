@@ -382,7 +382,7 @@ export default function Analyzer() {
             )}
 
             <Row gutter={[24, 24]}>
-                <Col xs={24} lg={16}>
+                <Col xs={24} lg={14}>
                     <Card>
                         {keysLoading ? (
                             <Spin tip="Loading API keys..." />
@@ -598,7 +598,7 @@ export default function Analyzer() {
 
                 </Col>
 
-                <Col xs={24} lg={8} style={{ paddingLeft: '0px' }}>
+                <Col xs={24} lg={10} style={{ paddingLeft: '0px' }}>
                     <Card style={{ position: 'sticky', top: 24 }} title="History">
                 <Space direction="vertical" style={{ width: '100%' }} size="middle">
                     <Input
