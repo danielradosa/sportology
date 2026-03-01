@@ -36,10 +36,10 @@ function AppHeader() {
 
   useEffect(() => {
     const loadAdminEmail = async () => {
-      if (!isAuthenticated) return
+      if (!isAuthenticated || !accessToken) return
       try {
         const res = await fetch('/api/v1/admin-email', {
-          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+          headers: { Authorization: `Bearer ${accessToken}` },
         })
         if (!res.ok) return
         const json = await res.json()
@@ -49,7 +49,7 @@ function AppHeader() {
       }
     }
     loadAdminEmail()
-  }, [isAuthenticated])
+  }, [isAuthenticated, accessToken])
 
   const menuItems = [
     { key: '/', icon: <HomeOutlined />, label: <Link to='/'>Home</Link> },

@@ -16,10 +16,10 @@ const AdminPanel = () => {
 
   useEffect(() => {
     const loadAdminEmail = async () => {
-      if (!isAuthenticated) return
+      if (!isAuthenticated || !accessToken) return
       try {
         const res = await fetch('/api/v1/admin-email', {
-          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+          headers: { Authorization: `Bearer ${accessToken}` },
         })
         if (!res.ok) return
         const json = await res.json()
@@ -29,10 +29,11 @@ const AdminPanel = () => {
       }
     }
     loadAdminEmail()
-  }, [isAuthenticated])
+  }, [isAuthenticated, accessToken])
 
   useEffect(() => {
     if (!isAuthenticated) return
+    if (adminEmail === null) return
     if (!adminEmail || user?.email?.toLowerCase() !== adminEmail) {
       navigate('/')
       return
