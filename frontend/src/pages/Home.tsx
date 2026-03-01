@@ -70,7 +70,7 @@ function Home() {
                 <Text strong>€49 / month</Text>
                 <ul style={{ paddingLeft: 18, marginTop: 8 }}>
                   <li>Unlimited API keys</li>
-                  <li>1000/day soft cap + fair use</li>
+                  <li>1000 analyses / day soft cap + fair use</li>
                 </ul>
               </Card>
             </Col>

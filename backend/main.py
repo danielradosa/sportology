@@ -17,7 +17,7 @@ from urllib.parse import urlencode
 
 import json
 
-from database import create_tables, get_db, User, APIKey, DemoUsage, Player, UsageLog, UserIPClaim
+from database import create_tables, get_db, User, APIKey, DemoUsage, Player, UsageLog, UserIPClaim, AnalysisHistory
 from auth import (
     get_password_hash, verify_password, create_access_token, 
     get_current_user, get_api_key_user, generate_api_key, 
@@ -571,6 +571,21 @@ def analyze_match_endpoint(
             match_date_str=request.match_date,
             sport=request.sport
         )
+
+        # Save history
+        history = AnalysisHistory(
+            user_id=current_user.id,
+            sport=request.sport,
+            player1_name=request.player1_name,
+            player2_name=request.player2_name,
+            match_date=request.match_date,
+            confidence=result.confidence,
+            winner_prediction=result.winner_prediction,
+            bet_size=result.bet_size,
+            score_difference=str(result.score_difference),
+        )
+        db.add(history)
+        db.commit()
         
         # Log successful usage
         log_usage(
@@ -866,6 +881,49 @@ def set_user_tier(
     return {"message": "Tier updated", "user_id": user.id, "tier": user.plan_tier}
 
 # Player database endpoints
+@app.get("/api/v1/analysis-history")
+def get_analysis_history(
+    current_user: User = Depends(get_current_user),
+    q: str = "",
+    sport: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    db: Session = Depends(get_db)
+):
+    query = db.query(AnalysisHistory).filter(AnalysisHistory.user_id == current_user.id)
+    if sport:
+        query = query.filter(AnalysisHistory.sport == sport)
+    if q:
+        q_raw = q.strip()
+        query = query.filter(
+            or_(
+                AnalysisHistory.player1_name.ilike(f"%{q_raw}%"),
+                AnalysisHistory.player2_name.ilike(f"%{q_raw}%"),
+            )
+        )
+    if start_date:
+        query = query.filter(AnalysisHistory.match_date >= start_date)
+    if end_date:
+        query = query.filter(AnalysisHistory.match_date <= end_date)
+
+    rows = query.order_by(AnalysisHistory.created_at.desc()).limit(200).all()
+    return [
+        {
+            "id": r.id,
+            "sport": r.sport,
+            "player1_name": r.player1_name,
+            "player2_name": r.player2_name,
+            "match_date": r.match_date,
+            "confidence": r.confidence,
+            "winner_prediction": r.winner_prediction,
+            "bet_size": r.bet_size,
+            "score_difference": r.score_difference,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in rows
+    ]
+
+
 @app.get("/api/v1/players")
 def search_players(
     q: str = "",

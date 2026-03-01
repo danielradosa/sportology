@@ -50,6 +50,20 @@ class UsageLog(Base):
     # Relationships
     user = relationship("User", back_populates="usage_logs")
 
+class AnalysisHistory(Base):
+    __tablename__ = "analysis_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    sport = Column(String(50), nullable=False)
+    player1_name = Column(String(100), nullable=False)
+    player2_name = Column(String(100), nullable=False)
+    match_date = Column(String(10), nullable=False)
+    confidence = Column(String(20))
+    winner_prediction = Column(String(100))
+    bet_size = Column(String(50))
+    score_difference = Column(String(50))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 def normalize_name(name: str) -> str:
     name = unicodedata.normalize("NFKD", name)

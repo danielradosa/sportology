@@ -18,9 +18,11 @@ import {
     Progress,
     Grid,
     Tag,
+    Table,
 } from "antd"
 import { InfoCircleOutlined, DotChartOutlined, CaretUpOutlined } from "@ant-design/icons"
 import dayjs from "dayjs"
+import * as XLSX from 'xlsx'
 import { Link } from 'react-router-dom'
 import { getLocaleDateFormat } from '../utils/dateFormat'
 import { useAuthStore } from "../hooks/useAuth"
@@ -51,7 +53,7 @@ const sportOptions = [
 
 export default function Analyzer() {
     const [form] = Form.useForm<AnalyzeFormValues>()
-    const { accessToken } = useAuthStore()
+    const accessToken = useAuthStore((s) => s.accessToken)
     const screens = useBreakpoint()
     const isMobile = !screens.md
     const dateFormat = getLocaleDateFormat()
@@ -74,6 +76,11 @@ export default function Analyzer() {
 
     // --- Birthdate lock state ---
     const [p1BirthLocked, setP1BirthLocked] = useState(false)
+    const [history, setHistory] = useState<any[]>([])
+    const [historyLoading, setHistoryLoading] = useState(false)
+    const [historyQuery, setHistoryQuery] = useState('')
+    const [historySport, setHistorySport] = useState('')
+    const [historyRange, setHistoryRange] = useState<any>(null)
     const [p2BirthLocked, setP2BirthLocked] = useState(false)
     const [p1HasDbRecord, setP1HasDbRecord] = useState(false)
     const [p2HasDbRecord, setP2HasDbRecord] = useState(false)
@@ -281,22 +288,43 @@ export default function Analyzer() {
     const confidenceBadge = (confidence?: string) => {
         const value = String(confidence || '').replace('_', ' ').toLowerCase()
         if (value.includes('strong')) {
-            return (
-                <Tag className="confidence-tag confidence-strong">Strong</Tag>
-            )
+            return <Tag className="confidence-tag confidence-strong">Strong</Tag>
         }
         if (value.includes('moderate')) {
-            return (
-                <Tag className="confidence-tag confidence-moderate">Moderate</Tag>
-            )
+            return <Tag className="confidence-tag confidence-moderate">Moderate</Tag>
         }
-        if (value.includes('weak')) {
-            return (
-                <Tag className="confidence-tag confidence-weak">Weak</Tag>
-            )
+        if (value.includes('weak') || value.includes('low')) {
+            return <Tag className="confidence-tag confidence-weak">Weak</Tag>
         }
         return value ? <Tag>{value}</Tag> : null
     }
+
+    const loadHistory = async () => {
+        if (!accessToken) return
+        setHistoryLoading(true)
+        try {
+            const params = new URLSearchParams()
+            if (historyQuery) params.append('q', historyQuery)
+            if (historySport) params.append('sport', historySport)
+            if (historyRange?.[0]) params.append('start_date', historyRange[0].format('YYYY-MM-DD'))
+            if (historyRange?.[1]) params.append('end_date', historyRange[1].format('YYYY-MM-DD'))
+
+            const res = await fetch(`/api/v1/analysis-history?${params.toString()}`, {
+                headers: { Authorization: `Bearer ${accessToken}` },
+            })
+            if (!res.ok) throw new Error('Failed')
+            const json = await res.json()
+            setHistory(json)
+        } catch {
+            // ignore
+        } finally {
+            setHistoryLoading(false)
+        }
+    }
+
+    useEffect(() => {
+        loadHistory()
+    }, [accessToken, historyQuery, historySport, historyRange])
 
     const onFinish = async (values: AnalyzeFormValues) => {
         setLoading(true)
@@ -353,10 +381,12 @@ export default function Analyzer() {
                 </Card>
             )}
 
-            <Card>
-                {keysLoading ? (
-                    <Spin tip="Loading API keys..." />
-                ) : activeKeys.length === 0 ? (
+            <Row gutter={[24, 24]}>
+                <Col xs={24} lg={16}>
+                    <Card>
+                        {keysLoading ? (
+                            <Spin tip="Loading API keys..." />
+                        ) : activeKeys.length === 0 ? (
                     <Alert
                         type="warning"
                         showIcon
@@ -565,6 +595,105 @@ export default function Analyzer() {
                     </Card>
                 </Card>
             )}
+
+                </Col>
+
+                <Col xs={24} lg={8}>
+                    <Card style={{ marginTop: 24, position: 'sticky', top: 24 }} title="History">
+                <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                    <Input
+                        placeholder="Search players"
+                        value={historyQuery}
+                        onChange={(e) => setHistoryQuery(e.target.value)}
+                    />
+                    <DatePicker.RangePicker
+                        value={historyRange}
+                        onChange={(val) => setHistoryRange(val)}
+                        style={{ width: '100%' }}
+                    />
+                    <Select
+                        placeholder="Sport"
+                        value={historySport || undefined}
+                        onChange={(val) => setHistorySport(val || '')}
+                        allowClear
+                    >
+                        <Select.Option value="tennis">Tennis</Select.Option>
+                        <Select.Option value="table-tennis">Table Tennis</Select.Option>
+                    </Select>
+
+                    <Space>
+                        <Button onClick={() => {
+                            const rows = history.map((h) => ({
+                                date: h.created_at,
+                                player1: h.player1_name,
+                                player2: h.player2_name,
+                                match_date: h.match_date,
+                                confidence: h.confidence,
+                                winner_prediction: h.winner_prediction,
+                                bet_size: h.bet_size,
+                            }))
+                            const header = Object.keys(rows[0] || {}).join(',')
+                            const body = rows.map((r) => Object.values(r).join(',')).join('\n')
+                            const csv = header + '\n' + body
+                            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+                            const link = document.createElement('a')
+                            link.href = URL.createObjectURL(blob)
+                            link.download = 'analysis-history.csv'
+                            link.click()
+                        }}>
+                            Export CSV
+                        </Button>
+                        <Button onClick={() => {
+                            const rows = history.map((h) => ({
+                                date: h.created_at,
+                                player1: h.player1_name,
+                                player2: h.player2_name,
+                                match_date: h.match_date,
+                                confidence: h.confidence,
+                                winner_prediction: h.winner_prediction,
+                                bet_size: h.bet_size,
+                            }))
+                            const ws = XLSX.utils.json_to_sheet(rows)
+                            const wb = XLSX.utils.book_new()
+                            XLSX.utils.book_append_sheet(wb, ws, 'History')
+                            XLSX.writeFile(wb, 'analysis-history.xlsx')
+                        }}>
+                            Export XLSX
+                        </Button>
+                    </Space>
+
+                    <Table
+                        size="small"
+                        rowKey="id"
+                        dataSource={history}
+                        loading={historyLoading}
+                        pagination={{ pageSize: 8 }}
+                        columns={[
+                            {
+                                title: 'Players',
+                                render: (r) => (
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                        <span>{r.player1_name}</span>
+                                        <span>{r.player2_name}</span>
+                                    </div>
+                                ),
+                            },
+                            {
+                                title: 'Match',
+                                dataIndex: 'match_date',
+                                render: (v) => dayjs(v, 'YYYY-MM-DD').format(dateFormat),
+                            },
+                            {
+                                title: 'Conf',
+                                dataIndex: 'confidence',
+                                render: (v) => confidenceBadge(v),
+                            },
+                        ]}
+                    />
+                </Space>
+            </Card>
+                </Col>
+            </Row>
         </div>
     )
 }
