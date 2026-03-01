@@ -599,7 +599,7 @@ export default function Analyzer() {
                 </Col>
 
                 <Col xs={24} lg={8}>
-                    <Card style={{ marginTop: 24, position: 'sticky', top: 24 }} title="History">
+                    <Card style={{ position: 'sticky', top: 24 }} title="History">
                 <Space direction="vertical" style={{ width: '100%' }} size="middle">
                     <Input
                         placeholder="Search players"

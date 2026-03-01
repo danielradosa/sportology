@@ -579,10 +579,10 @@ def analyze_match_endpoint(
             player1_name=request.player1_name,
             player2_name=request.player2_name,
             match_date=request.match_date,
-            confidence=result.confidence,
-            winner_prediction=result.winner_prediction,
-            bet_size=result.bet_size,
-            score_difference=str(result.score_difference),
+            confidence=result.get("confidence"),
+            winner_prediction=result.get("winner_prediction"),
+            bet_size=result.get("bet_size"),
+            score_difference=str(result.get("score_difference")),
         )
         db.add(history)
         db.commit()
