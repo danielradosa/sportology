@@ -19,6 +19,9 @@ import {
     Grid,
     Tag,
     Table,
+    Modal,
+    Descriptions,
+    Collapse,
 } from "antd"
 import { InfoCircleOutlined, DotChartOutlined, CaretUpOutlined } from "@ant-design/icons"
 import dayjs from "dayjs"
@@ -81,6 +84,11 @@ export default function Analyzer() {
     const [historyQuery, setHistoryQuery] = useState('')
     const [historySport, setHistorySport] = useState('')
     const [historyRange, setHistoryRange] = useState<any>(null)
+
+    // History detail modal
+    const [historyModalOpen, setHistoryModalOpen] = useState(false)
+    const [historyDetailLoading, setHistoryDetailLoading] = useState(false)
+    const [historyDetail, setHistoryDetail] = useState<any | null>(null)
     const [p2BirthLocked, setP2BirthLocked] = useState(false)
     const [p1HasDbRecord, setP1HasDbRecord] = useState(false)
     const [p2HasDbRecord, setP2HasDbRecord] = useState(false)
@@ -319,6 +327,30 @@ export default function Analyzer() {
             // ignore
         } finally {
             setHistoryLoading(false)
+        }
+    }
+
+    const openHistoryDetail = async (row: any) => {
+        if (!accessToken) return
+        setHistoryModalOpen(true)
+        setHistoryDetail(null)
+        setHistoryDetailLoading(true)
+        try {
+            const res = await fetch(`/api/v1/analysis-history/${row.id}`, {
+                headers: { Authorization: `Bearer ${accessToken}` },
+            })
+            if (!res.ok) {
+                const msg = res.status === 404
+                    ? 'No stored breakdown for this entry (older analyses were saved without details).'
+                    : 'Failed to load breakdown.'
+                throw new Error(msg)
+            }
+            const json = await res.json()
+            setHistoryDetail(json)
+        } catch (e: any) {
+            message.warning(e?.message || 'Failed to load breakdown')
+        } finally {
+            setHistoryDetailLoading(false)
         }
     }
 
@@ -669,6 +701,10 @@ export default function Analyzer() {
                         dataSource={history}
                         loading={historyLoading}
                         pagination={{ pageSize: 8 }}
+                        rowClassName={() => 'clickable-row'}
+                        onRow={(record) => ({
+                            onClick: () => openHistoryDetail(record),
+                        })}
                         columns={[
                             {
                                 title: 'Players',
@@ -691,6 +727,101 @@ export default function Analyzer() {
                             },
                         ]}
                     />
+
+                    <Modal
+                        title={historyDetail?.analysis
+                            ? `Numerology breakdown: ${historyDetail.analysis.player1?.name || ''} vs ${historyDetail.analysis.player2?.name || ''}`
+                            : 'Numerology breakdown'}
+                        open={historyModalOpen}
+                        onCancel={() => setHistoryModalOpen(false)}
+                        footer={null}
+                        width={800}
+                    >
+                        {historyDetailLoading && (
+                            <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
+                                <Spin />
+                            </div>
+                        )}
+
+                        {!historyDetailLoading && historyDetail?.analysis && (() => {
+                            const a = historyDetail.analysis as MatchAnalysisResponse
+                            return (
+                                <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                                    <Descriptions size="small" bordered column={1}>
+                                        <Descriptions.Item label="Sport">{a.sport}</Descriptions.Item>
+                                        <Descriptions.Item label="Match date">{a.match_date}</Descriptions.Item>
+                                        <Descriptions.Item label="Winner prediction">{a.winner_prediction}</Descriptions.Item>
+                                        <Descriptions.Item label="Confidence">{a.confidence}</Descriptions.Item>
+                                        <Descriptions.Item label="Bet size">{a.bet_size}</Descriptions.Item>
+                                        <Descriptions.Item label="Universal day / month / year">
+                                            {a.universal_day} / {a.universal_month} / {a.universal_year}
+                                        </Descriptions.Item>
+                                    </Descriptions>
+
+                                    <Collapse
+                                        items={[
+                                            {
+                                                key: 'p1',
+                                                label: a.player1?.name || 'Player 1',
+                                                children: (
+                                                    <div>
+                                                        <Descriptions size="small" bordered column={1}>
+                                                            <Descriptions.Item label="Life path">{a.player1.life_path}</Descriptions.Item>
+                                                            <Descriptions.Item label="Expression">{a.player1.expression}</Descriptions.Item>
+                                                            <Descriptions.Item label="Personal year">{a.player1.personal_year}</Descriptions.Item>
+                                                            <Descriptions.Item label="Score">{a.player1.score}</Descriptions.Item>
+                                                        </Descriptions>
+                                                        {Array.isArray(a.player1?.reasons) && a.player1.reasons.length > 0 && (
+                                                            <div style={{ marginTop: 10 }}>
+                                                                <Text strong>Reasons</Text>
+                                                                <ul style={{ marginTop: 6, paddingLeft: 18 }}>
+                                                                    {a.player1.reasons.map((r, idx) => (
+                                                                        <li key={idx}>{r}</li>
+                                                                    ))}
+                                                                </ul>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ),
+                                            },
+                                            {
+                                                key: 'p2',
+                                                label: a.player2?.name || 'Player 2',
+                                                children: (
+                                                    <div>
+                                                        <Descriptions size="small" bordered column={1}>
+                                                            <Descriptions.Item label="Life path">{a.player2.life_path}</Descriptions.Item>
+                                                            <Descriptions.Item label="Expression">{a.player2.expression}</Descriptions.Item>
+                                                            <Descriptions.Item label="Personal year">{a.player2.personal_year}</Descriptions.Item>
+                                                            <Descriptions.Item label="Score">{a.player2.score}</Descriptions.Item>
+                                                        </Descriptions>
+                                                        {Array.isArray(a.player2?.reasons) && a.player2.reasons.length > 0 && (
+                                                            <div style={{ marginTop: 10 }}>
+                                                                <Text strong>Reasons</Text>
+                                                                <ul style={{ marginTop: 6, paddingLeft: 18 }}>
+                                                                    {a.player2.reasons.map((r, idx) => (
+                                                                        <li key={idx}>{r}</li>
+                                                                    ))}
+                                                                </ul>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ),
+                                            },
+                                        ]}
+                                    />
+
+                                    {a.analysis_summary && (
+                                        <Alert type="info" showIcon message="Summary" description={a.analysis_summary} />
+                                    )}
+                                </Space>
+                            )
+                        })()}
+
+                        {!historyDetailLoading && historyModalOpen && !historyDetail?.analysis && (
+                            <Alert type="warning" showIcon message="No breakdown available" description="This history entry doesn't have a stored breakdown." />
+                        )}
+                    </Modal>
                 </Space>
             </Card>
                 </Col>

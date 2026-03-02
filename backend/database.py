@@ -63,6 +63,8 @@ class AnalysisHistory(Base):
     winner_prediction = Column(String(100))
     bet_size = Column(String(50))
     score_difference = Column(String(50))
+    # Store the full analysis payload so the UI can show a detailed breakdown later.
+    analysis_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 def normalize_name(name: str) -> str:
@@ -126,6 +128,17 @@ def ensure_schema_updates():
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE users ADD COLUMN plan_tier VARCHAR(20) DEFAULT 'free'"))
             conn.execute(text("UPDATE users SET plan_tier='free' WHERE plan_tier IS NULL"))
+
+    # analysis_history: store full analysis payload (sqlite + postgres)
+    if "analysis_history" in insp.get_table_names():
+        cols_hist = {c["name"] for c in insp.get_columns("analysis_history")}
+        if "analysis_json" not in cols_hist:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE analysis_history ADD COLUMN analysis_json TEXT"))
+            except Exception:
+                # Best-effort; older deployments might not support ALTER in some contexts
+                pass
 
     # add players.verified if missing (postgres only)
     if "players" in insp.get_table_names():

@@ -573,6 +573,7 @@ def analyze_match_endpoint(
         )
 
         # Save history
+        import json
         history = AnalysisHistory(
             user_id=current_user.id,
             sport=request.sport,
@@ -583,6 +584,7 @@ def analyze_match_endpoint(
             winner_prediction=result.get("winner_prediction"),
             bet_size=result.get("bet_size"),
             score_difference=str(result.get("score_difference")),
+            analysis_json=json.dumps(result),
         )
         db.add(history)
         db.commit()
@@ -922,6 +924,42 @@ def get_analysis_history(
         }
         for r in rows
     ]
+
+
+@app.get("/api/v1/analysis-history/{history_id}")
+def get_analysis_history_detail(
+    history_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Fetch the full stored analysis payload for a specific history row."""
+    row = (
+        db.query(AnalysisHistory)
+        .filter(AnalysisHistory.id == history_id, AnalysisHistory.user_id == current_user.id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="History entry not found")
+
+    if not row.analysis_json:
+        # Backward compatibility for rows created before we started storing the payload.
+        raise HTTPException(status_code=404, detail="No stored analysis payload for this entry")
+
+    import json
+    try:
+        payload = json.loads(row.analysis_json)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Stored analysis payload is corrupted")
+
+    return {
+        "id": row.id,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "match_date": row.match_date,
+        "sport": row.sport,
+        "player1_name": row.player1_name,
+        "player2_name": row.player2_name,
+        "analysis": payload,
+    }
 
 
 @app.get("/api/v1/players")

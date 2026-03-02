@@ -189,3 +189,7 @@ body {
     transition: none !important;
   }
 }
+
+/* History table rows are clickable (opens breakdown modal) */
+.clickable-row { cursor: pointer; }
+.clickable-row:hover td { background: rgba(24, 144, 255, 0.06) !important; }
