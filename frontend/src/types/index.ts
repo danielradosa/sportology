@@ -3,6 +3,8 @@ export interface User {
   email: string
   created_at: string
   plan_tier?: 'free' | 'starter' | 'pro' | string
+  plan_expires_at?: string | null
+  wallet_address?: string | null
 }
 
 export interface ApiKey {

@@ -17,7 +17,7 @@ from urllib.parse import urlencode
 
 import json
 
-from database import create_tables, get_db, User, APIKey, DemoUsage, Player, UsageLog, UserIPClaim, AnalysisHistory
+from database import create_tables, get_db, User, APIKey, DemoUsage, Player, UsageLog, UserIPClaim, AnalysisHistory, Payment
 from auth import (
     get_password_hash, verify_password, create_access_token, 
     get_current_user, get_api_key_user, generate_api_key, 
@@ -427,6 +427,8 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
             "email": user.email,
             "created_at": user.created_at.isoformat(),
             "plan_tier": user.plan_tier,
+            "plan_expires_at": user.plan_expires_at.isoformat() if getattr(user, 'plan_expires_at', None) else None,
+            "wallet_address": user.wallet_address,
         }
     }
 
@@ -437,11 +439,217 @@ def get_me(current_user: User = Depends(get_current_user)):
         "email": current_user.email,
         "created_at": current_user.created_at.isoformat(),
         "plan_tier": current_user.plan_tier,
+        "plan_expires_at": current_user.plan_expires_at.isoformat() if current_user.plan_expires_at else None,
+        "wallet_address": current_user.wallet_address,
     }
 
 @app.get("/api/v1/admin-email")
 def get_admin_email(current_user: User = Depends(get_current_user)):
     return {"admin_email": os.getenv("VITE_ADMIN_EMAIL") or os.getenv("ADMIN_EMAIL") or ""}
+
+
+# --- Subscriptions (USDC Polygon) ---
+
+POLYGON_USDC_CONTRACTS = {
+    # Native USDC (Circle) on Polygon
+    "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359",
+    # USDC.e (bridged) still commonly used
+    "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+}
+
+USDC_DECIMALS = 6
+STARTER_PRICE_USDC = 19
+PRO_PRICE_USDC = 49
+
+
+@app.get("/api/v1/subscription/nonce")
+def get_wallet_link_nonce(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    import secrets
+    nonce = secrets.token_hex(16)
+    current_user.wallet_link_nonce = nonce
+    db.commit()
+    return {
+        "nonce": nonce,
+        "message": f"Link wallet to Sportology (user {current_user.email}): {nonce}",
+    }
+
+
+@app.post("/api/v1/subscription/link-wallet")
+def link_wallet(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Link an EVM wallet to the current user.
+
+    Expects: { wallet_address, signature }
+    Signature must be over the exact message returned by /api/v1/subscription/nonce.
+    """
+    wallet_address = (payload.get("wallet_address") or "").strip()
+    signature = (payload.get("signature") or "").strip()
+
+    if not wallet_address or not signature:
+        raise HTTPException(status_code=400, detail="wallet_address and signature are required")
+
+    if not current_user.wallet_link_nonce:
+        raise HTTPException(status_code=400, detail="No nonce issued. Call /api/v1/subscription/nonce first")
+
+    message_text = f"Link wallet to Sportology (user {current_user.email}): {current_user.wallet_link_nonce}"
+
+    try:
+        from web3 import Web3
+        from eth_account.messages import encode_defunct
+
+        recovered = Web3().eth.account.recover_message(
+            encode_defunct(text=message_text),
+            signature=signature,
+        )
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    if recovered.lower() != wallet_address.lower():
+        raise HTTPException(status_code=400, detail="Signature does not match wallet_address")
+
+    # ensure wallet not linked to another user
+    other = db.query(User).filter(User.wallet_address == wallet_address).first()
+    if other and other.id != current_user.id:
+        raise HTTPException(status_code=409, detail="Wallet already linked to another user")
+
+    current_user.wallet_address = wallet_address
+    current_user.wallet_link_nonce = None
+    db.commit()
+
+    return {"wallet_address": current_user.wallet_address}
+
+
+@app.get("/api/v1/subscription/status")
+def subscription_status(current_user: User = Depends(get_current_user)):
+    return {
+        "plan_tier": current_user.plan_tier,
+        "plan_expires_at": current_user.plan_expires_at.isoformat() if current_user.plan_expires_at else None,
+        "wallet_address": current_user.wallet_address,
+        "prices": {"starter_usdc": STARTER_PRICE_USDC, "pro_usdc": PRO_PRICE_USDC},
+        "chain": "polygon",
+    }
+
+
+@app.post("/api/v1/subscription/verify-payment")
+def verify_payment(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Verify a Polygon USDC transfer transaction and credit the subscription.
+
+    Expects: { tx_hash }
+    Rules: accept exact 19 USDC (starter) or 49 USDC (pro), sent from the user's linked wallet to TREASURY_WALLET.
+    """
+    tx_hash = (payload.get("tx_hash") or "").strip()
+    if not tx_hash:
+        raise HTTPException(status_code=400, detail="tx_hash is required")
+
+    if not current_user.wallet_address:
+        raise HTTPException(status_code=400, detail="No wallet linked")
+
+    treasury = (os.getenv("TREASURY_WALLET") or "").strip()
+    if not treasury:
+        raise HTTPException(status_code=500, detail="TREASURY_WALLET not configured")
+
+    rpc_url = (os.getenv("POLYGON_RPC_URL") or "").strip()
+    if not rpc_url:
+        raise HTTPException(status_code=500, detail="POLYGON_RPC_URL not configured")
+
+    # replay protection
+    existing = db.query(Payment).filter(Payment.tx_hash == tx_hash).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Transaction already processed")
+
+    try:
+        from web3 import Web3
+        w3 = Web3(Web3.HTTPProvider(rpc_url))
+        receipt = w3.eth.get_transaction_receipt(tx_hash)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Could not fetch transaction receipt")
+
+    if not receipt or receipt.get("status") != 1:
+        raise HTTPException(status_code=400, detail="Transaction not successful")
+
+    # USDC Transfer event
+    transfer_sig = w3.keccak(text="Transfer(address,address,uint256)").hex()
+    wallet_lc = current_user.wallet_address.lower()
+    treasury_lc = treasury.lower()
+
+    matched = None  # (contract, from, to, amount)
+    for log in receipt.get("logs", []):
+        addr = (log.get("address") or "").lower()
+        if addr not in POLYGON_USDC_CONTRACTS:
+            continue
+        topics = log.get("topics") or []
+        if len(topics) < 3:
+            continue
+        if topics[0].hex() != transfer_sig:
+            continue
+
+        # topics[1] = from, topics[2] = to
+        from_addr = "0x" + topics[1].hex()[-40:]
+        to_addr = "0x" + topics[2].hex()[-40:]
+
+        if to_addr.lower() != treasury_lc:
+            continue
+        if from_addr.lower() != wallet_lc:
+            continue
+
+        amount = int(log.get("data") or "0x0", 16)
+        matched = (addr, from_addr, to_addr, amount)
+        break
+
+    if not matched:
+        raise HTTPException(status_code=400, detail="No matching USDC transfer found in transaction")
+
+    _, from_addr, to_addr, amount = matched
+
+    starter_amount = STARTER_PRICE_USDC * (10 ** USDC_DECIMALS)
+    pro_amount = PRO_PRICE_USDC * (10 ** USDC_DECIMALS)
+
+    if amount == starter_amount:
+        new_tier = "starter"
+        amount_usdc = str(STARTER_PRICE_USDC)
+    elif amount == pro_amount:
+        new_tier = "pro"
+        amount_usdc = str(PRO_PRICE_USDC)
+    else:
+        raise HTTPException(status_code=400, detail="Amount must be exactly 19 or 49 USDC")
+
+    # credit 30 days (stacking)
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    base = current_user.plan_expires_at if current_user.plan_expires_at and current_user.plan_expires_at > now else now
+    current_user.plan_tier = new_tier
+    current_user.plan_expires_at = base + timedelta(days=30)
+
+    payment = Payment(
+        user_id=current_user.id,
+        chain="polygon",
+        token="USDC",
+        amount_usdc=amount_usdc,
+        plan_tier=new_tier,
+        tx_hash=tx_hash,
+        from_address=from_addr,
+        to_address=to_addr,
+    )
+
+    db.add(payment)
+    db.commit()
+
+    return {
+        "credited": True,
+        "plan_tier": current_user.plan_tier,
+        "plan_expires_at": current_user.plan_expires_at.isoformat() if current_user.plan_expires_at else None,
+        "tx_hash": tx_hash,
+    }
 
 # API Key management endpoints
 @app.post("/api-keys", response_model=APIKeyResponse)

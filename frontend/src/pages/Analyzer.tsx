@@ -679,29 +679,6 @@ export default function Analyzer() {
 
                     <Space wrap>
                         <Button onClick={() => {
-                            setHistoryQuery('')
-                            setHistorySport('')
-                            setHistoryRange(null)
-                        }}>
-                            Clear filters
-                        </Button>
-
-                        <Popconfirm
-                            title="Clear history"
-                            description={historyQuery || historySport || historyRange
-                                ? 'This will delete the currently filtered history entries. This cannot be undone.'
-                                : 'This will delete ALL your history entries. This cannot be undone.'}
-                            okText="Delete"
-                            okButtonProps={{ danger: true }}
-                            cancelText="Cancel"
-                            onConfirm={clearHistory}
-                        >
-                            <Button danger>
-                                Clear history
-                            </Button>
-                        </Popconfirm>
-
-                        <Button onClick={() => {
                             const rows = history.map((h) => ({
                                 date: h.created_at,
                                 player1: h.player1_name,
@@ -739,6 +716,21 @@ export default function Analyzer() {
                         }}>
                             Export XLSX
                         </Button>
+
+                        <Popconfirm
+                            title="Clear history"
+                            description={historyQuery || historySport || historyRange
+                                ? 'This will delete the currently filtered history entries. This cannot be undone.'
+                                : 'This will delete ALL your history entries. This cannot be undone.'}
+                            okText="Delete"
+                            okButtonProps={{ danger: true }}
+                            cancelText="Cancel"
+                            onConfirm={clearHistory}
+                        >
+                            <Button danger>
+                                Clear history
+                            </Button>
+                        </Popconfirm>
                     </Space>
 
                     <Table

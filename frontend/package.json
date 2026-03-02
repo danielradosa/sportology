@@ -18,7 +18,8 @@
     "react-router-dom": "^6.26.1",
     "scroll-into-view-if-needed": "^2.2.31",
     "zustand": "^4.5.5",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "ethers": "^6.13.4"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Card,
   Row,
@@ -34,7 +34,10 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { useAuth, useAuthStore } from '../hooks/useAuth'
 import { ApiKey } from '../types'
 import * as apiKeyService from '../services/apiKeyService'
+import * as subscriptionService from '../services/subscriptionService'
+import * as authService from '../services/authService'
 import { ApiError } from '../services/apiClient'
+import { BrowserProvider, Contract, parseUnits } from 'ethers'
 
 const { Title, Text } = Typography
 
@@ -45,6 +48,12 @@ function Dashboard() {
   const [createForm] = Form.useForm()
   const [createLoading, setCreateLoading] = useState(false)
 
+  // subscription
+  const [subLoading, setSubLoading] = useState(false)
+  const [subStatus, setSubStatus] = useState<subscriptionService.SubscriptionStatus | null>(null)
+  const [walletBusy, setWalletBusy] = useState(false)
+  const [lastTx, setLastTx] = useState<string | null>(null)
+
   const { accessToken } = useAuthStore()
   const { user } = useAuth()
 
@@ -54,6 +63,20 @@ function Dashboard() {
 
   const tier = (user?.plan_tier || 'free').toLowerCase()
   const keyLimit = tier === 'free' ? 1 : tier === 'starter' ? 3 : 'Unlimited'
+
+  const treasuryWallet = (import.meta as any).env?.VITE_TREASURY_WALLET as string | undefined
+  const usdcAddress = ((import.meta as any).env?.VITE_POLYGON_USDC_ADDRESS as string | undefined) ||
+    '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359'
+
+  const planExpiresText = useMemo(() => {
+    const iso = user?.plan_expires_at
+    if (!iso) return null
+    try {
+      return new Date(iso).toLocaleString()
+    } catch {
+      return iso
+    }
+  }, [user?.plan_expires_at])
 
   const requireToken = useCallback(() => {
     if (!accessToken) {
@@ -78,9 +101,33 @@ function Dashboard() {
     }
   }, [requireToken])
 
+  const refreshMe = useCallback(async () => {
+    if (!accessToken) return
+    try {
+      const me = await authService.me(accessToken)
+      useAuthStore.setState((s: any) => ({ ...s, user: me }))
+    } catch {
+      // ignore
+    }
+  }, [accessToken])
+
+  const fetchSubStatus = useCallback(async () => {
+    if (!accessToken) return
+    setSubLoading(true)
+    try {
+      const s = await subscriptionService.status(accessToken)
+      setSubStatus(s)
+    } catch {
+      // ignore
+    } finally {
+      setSubLoading(false)
+    }
+  }, [accessToken])
+
   useEffect(() => {
     fetchApiKeys()
-  }, [fetchApiKeys])
+    fetchSubStatus()
+  }, [fetchApiKeys, fetchSubStatus])
 
   const handleCreateApiKey = async (values: { name: string }) => {
     const token = requireToken()
@@ -119,6 +166,87 @@ function Dashboard() {
         }
       },
     })
+  }
+
+  const ensurePolygon = async (provider: BrowserProvider) => {
+    const network = await provider.getNetwork()
+    if (Number(network.chainId) !== 137) {
+      throw new Error('Please switch your wallet to Polygon (chainId 137)')
+    }
+  }
+
+  const handleLinkWallet = async () => {
+    const token = requireToken()
+    if (!token) return
+
+    if (!(window as any).ethereum) {
+      message.error('No wallet found (window.ethereum missing)')
+      return
+    }
+
+    setWalletBusy(true)
+    try {
+      const provider = new BrowserProvider((window as any).ethereum)
+      await ensurePolygon(provider)
+      const signer = await provider.getSigner()
+      const addr = await signer.getAddress()
+
+      const nonce = await subscriptionService.getNonce(token)
+      const sig = await signer.signMessage(nonce.message)
+
+      await subscriptionService.linkWallet(token, addr, sig)
+      message.success('Wallet linked')
+      await refreshMe()
+      await fetchSubStatus()
+    } catch (e: any) {
+      message.error(e?.message || 'Failed to link wallet')
+    } finally {
+      setWalletBusy(false)
+    }
+  }
+
+  const sendUsdc = async (amountUsdc: number) => {
+    const token = requireToken()
+    if (!token) return
+
+    if (!treasuryWallet) {
+      message.error('VITE_TREASURY_WALLET is not configured in the frontend')
+      return
+    }
+
+    if (!(window as any).ethereum) {
+      message.error('No wallet found (window.ethereum missing)')
+      return
+    }
+
+    setWalletBusy(true)
+    try {
+      const provider = new BrowserProvider((window as any).ethereum)
+      await ensurePolygon(provider)
+      const signer = await provider.getSigner()
+
+      // Minimal ERC20 ABI
+      const erc20Abi = [
+        'function transfer(address to, uint256 value) returns (bool)',
+      ]
+
+      const usdc = new Contract(usdcAddress, erc20Abi, signer)
+      const value = parseUnits(String(amountUsdc), 6)
+      const tx = await usdc.transfer(treasuryWallet, value)
+      setLastTx(tx.hash)
+      message.loading({ content: 'Transaction sent. Waiting for confirmation…', key: 'txwait', duration: 0 })
+      await tx.wait()
+      message.success({ content: 'Confirmed. Crediting subscription…', key: 'txwait' })
+
+      await subscriptionService.verifyPayment(token, tx.hash)
+      message.success('Subscription updated')
+      await refreshMe()
+      await fetchSubStatus()
+    } catch (e: any) {
+      message.error(e?.message || 'Payment failed')
+    } finally {
+      setWalletBusy(false)
+    }
   }
 
   const columns = [
@@ -281,6 +409,81 @@ function Dashboard() {
           description={wsError}
         />
       )}
+
+      <Card style={{ marginBottom: 16 }} title="Subscription (USDC on Polygon)">
+        <Space direction="vertical" style={{ width: '100%' }} size={10}>
+          <Alert
+            type="info"
+            showIcon
+            message={`Tier: ${(user?.plan_tier || 'free').toUpperCase()}`}
+            description={planExpiresText ? `Expires: ${planExpiresText} (24h grace after expiry)` : 'No active subscription.'}
+          />
+
+          <Space wrap>
+            <Text type="secondary">Linked wallet:</Text>
+            <Text code>{user?.wallet_address || subStatus?.wallet_address || '—'}</Text>
+            <Button onClick={handleLinkWallet} loading={walletBusy}>
+              {user?.wallet_address ? 'Relink wallet' : 'Link wallet'}
+            </Button>
+          </Space>
+
+          <Space wrap>
+            <Text type="secondary">Treasury:</Text>
+            <Text code>{treasuryWallet || 'NOT SET'}</Text>
+            {treasuryWallet && (
+              <Tooltip title="Copy">
+                <Button
+                  size="small"
+                  icon={<CopyOutlined />}
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(treasuryWallet)
+                      message.success('Copied treasury address')
+                    } catch {
+                      message.error('Failed to copy')
+                    }
+                  }}
+                />
+              </Tooltip>
+            )}
+          </Space>
+
+          <Space wrap>
+            <Button
+              type="primary"
+              onClick={() => sendUsdc(19)}
+              disabled={!treasuryWallet || !user?.wallet_address}
+              loading={walletBusy}
+            >
+              Subscribe Starter (19 USDC)
+            </Button>
+            <Button
+              type="primary"
+              onClick={() => sendUsdc(49)}
+              disabled={!treasuryWallet || !user?.wallet_address}
+              loading={walletBusy}
+            >
+              Subscribe Pro (49 USDC)
+            </Button>
+            <Button icon={<ReloadOutlined />} onClick={fetchSubStatus} loading={subLoading}>
+              Refresh
+            </Button>
+          </Space>
+
+          {lastTx && (
+            <Text type="secondary">Last tx: <Text code>{lastTx}</Text></Text>
+          )}
+
+          {!user?.wallet_address && (
+            <Alert
+              type="warning"
+              showIcon
+              message="Link your wallet first"
+              description="We verify payments by matching the sender address to your linked wallet, then checking the USDC transfer amount (19 or 49) to the treasury wallet."
+            />
+          )}
+        </Space>
+      </Card>
 
       <Card
         title={

@@ -68,6 +68,28 @@ def verify_token(token: str):
     except JWTError:
         return None
 
+def _apply_subscription_downgrade_if_needed(user: User, db: Session) -> User:
+    """Downgrade user to free if subscription expired beyond 24h grace."""
+    try:
+        if not user:
+            return user
+        tier = (user.plan_tier or "free").lower()
+        if tier == "free":
+            return user
+        if not getattr(user, "plan_expires_at", None):
+            return user
+
+        now = datetime.utcnow()
+        grace_deadline = user.plan_expires_at + timedelta(hours=24)
+        if now > grace_deadline:
+            user.plan_tier = "free"
+            db.commit()
+    except Exception:
+        # best-effort; don't block auth
+        pass
+    return user
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
@@ -94,7 +116,8 @@ async def get_current_user(
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
+    user = _apply_subscription_downgrade_if_needed(user, db)
     return user
 
 async def get_api_key_user(
@@ -123,7 +146,9 @@ async def get_api_key_user(
     api_key_record.request_count += 1
     db.commit()
     
-    return api_key_record.user
+    user = api_key_record.user
+    user = _apply_subscription_downgrade_if_needed(user, db)
+    return user
 
 TIER_DAILY_LIMITS = {
     "free": 10,

@@ -15,7 +15,14 @@ class User(Base):
     email = Column(String(255), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # subscription
     plan_tier = Column(String(20), default="free", nullable=False)
+    plan_expires_at = Column(DateTime, nullable=True)
+
+    # crypto payment identity (optional)
+    wallet_address = Column(String(64), unique=True, index=True, nullable=True)
+    wallet_link_nonce = Column(String(64), nullable=True)
     
     # Relationships
     api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
@@ -90,6 +97,24 @@ class Player(Base):
     verified = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    chain = Column(String(32), nullable=False, default="polygon")
+    token = Column(String(16), nullable=False, default="USDC")
+    amount_usdc = Column(String(32), nullable=False)
+    plan_tier = Column(String(20), nullable=False)
+
+    tx_hash = Column(String(80), nullable=False, unique=True, index=True)
+    from_address = Column(String(64), nullable=True)
+    to_address = Column(String(64), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class UserIPClaim(Base):
     __tablename__ = "user_ip_claims"
 
@@ -129,6 +154,28 @@ def ensure_schema_updates():
             conn.execute(text("ALTER TABLE users ADD COLUMN plan_tier VARCHAR(20) DEFAULT 'free'"))
             conn.execute(text("UPDATE users SET plan_tier='free' WHERE plan_tier IS NULL"))
 
+    if "plan_expires_at" not in cols:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN plan_expires_at DATETIME"))
+        except Exception:
+            pass
+
+    if "wallet_address" not in cols:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN wallet_address VARCHAR(64)"))
+                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_wallet_address ON users(wallet_address)"))
+        except Exception:
+            pass
+
+    if "wallet_link_nonce" not in cols:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN wallet_link_nonce VARCHAR(64)"))
+        except Exception:
+            pass
+
     # analysis_history: store full analysis payload (sqlite + postgres)
     if "analysis_history" in insp.get_table_names():
         cols_hist = {c["name"] for c in insp.get_columns("analysis_history")}
@@ -139,6 +186,13 @@ def ensure_schema_updates():
             except Exception:
                 # Best-effort; older deployments might not support ALTER in some contexts
                 pass
+
+    # payments table (create if missing)
+    if "payments" not in insp.get_table_names():
+        try:
+            Payment.__table__.create(bind=engine, checkfirst=True)
+        except Exception:
+            pass
 
     # add players.verified if missing (postgres only)
     if "players" in insp.get_table_names():
