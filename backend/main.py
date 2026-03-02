@@ -527,10 +527,12 @@ def link_wallet(
 
 @app.get("/api/v1/subscription/status")
 def subscription_status(current_user: User = Depends(get_current_user)):
+    treasury = (os.getenv("TREASURY_WALLET") or "").strip() or None
     return {
         "plan_tier": current_user.plan_tier,
         "plan_expires_at": current_user.plan_expires_at.isoformat() if current_user.plan_expires_at else None,
         "wallet_address": current_user.wallet_address,
+        "treasury_wallet": treasury,
         "prices": {"starter_usdc": STARTER_PRICE_USDC, "pro_usdc": PRO_PRICE_USDC},
         "chain": "polygon",
     }

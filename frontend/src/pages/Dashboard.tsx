@@ -64,7 +64,7 @@ function Dashboard() {
   const tier = (user?.plan_tier || 'free').toLowerCase()
   const keyLimit = tier === 'free' ? 1 : tier === 'starter' ? 3 : 'Unlimited'
 
-  const treasuryWallet = (import.meta as any).env?.VITE_TREASURY_WALLET as string | undefined
+  const treasuryWallet = subStatus?.treasury_wallet || undefined
   const usdcAddress = ((import.meta as any).env?.VITE_POLYGON_USDC_ADDRESS as string | undefined) ||
     '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359'
 

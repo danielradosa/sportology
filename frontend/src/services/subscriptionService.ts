@@ -4,6 +4,7 @@ export type SubscriptionStatus = {
   plan_tier: string
   plan_expires_at: string | null
   wallet_address: string | null
+  treasury_wallet?: string | null
   prices: { starter_usdc: number; pro_usdc: number }
   chain: 'polygon' | string
 }
