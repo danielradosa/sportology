@@ -36,6 +36,7 @@ import { analyzeMatch } from '../services/analysisService'
 import { searchPlayers, resolvePlayer, addPlayer, type PlayerSuggestion } from '../services/playerService'
 import { ApiError } from '../services/apiClient'
 import { getUsageStats, type UsageStats } from '../services/usageService'
+import { formatDuration } from '../utils/time'
 
 const { Title, Text } = Typography
 const { useBreakpoint } = Grid
@@ -428,11 +429,13 @@ export default function Analyzer() {
                 <Card style={{ marginBottom: 12 }}>
                     <Space direction='vertical' style={{ width: '100%' }} size={6}>
                         <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                            <Text strong>Daily usage</Text>
-                            <Text>{usage.today}/{usage.limit}</Text>
+                            <Text strong>Usage (last 24h epoch)</Text>
+                            <Text>{usage.epoch_used}/{usage.limit} · {usage.remaining} left</Text>
                         </Space>
-                        <Progress percent={Math.min(100, Math.round((usage.today / Math.max(1, usage.limit)) * 100))} showInfo={false} />
-                        <Text type='secondary'>Resets at {new Date(usage.reset_time).toLocaleString()}</Text>
+                        <Progress percent={Math.min(100, Math.round((usage.epoch_used / Math.max(1, usage.limit)) * 100))} showInfo={false} />
+                        <Text type='secondary'>
+                            Resets at {new Date(usage.reset_time).toLocaleString()} ({formatDuration(new Date(usage.reset_time).getTime() - Date.now())})
+                        </Text>
                     </Space>
                 </Card>
             )}

@@ -158,32 +158,54 @@ TIER_DAILY_LIMITS = {
 
 
 def check_rate_limit(user: User, db: Session):
-    """Check if user has exceeded daily limit by tier."""
-    from datetime import date
+    """User-specific 24h epochs.
 
-    today = date.today()
-    today_start = datetime.combine(today, datetime.min.time())
-    today_end = datetime.combine(today, datetime.max.time())
+    Each user has an anchor timestamp. Quota resets every 24h from that anchor.
+    This avoids timezone/DST issues and gives a clear "full reset" moment.
+
+    - If anchor is missing, we set it at first successful request.
+    - The current epoch is [anchor + k*24h, anchor + (k+1)*24h).
+    """
+    from datetime import timedelta
 
     tier = (user.plan_tier or "free").lower()
     limit = TIER_DAILY_LIMITS.get(tier, TIER_DAILY_LIMITS["free"])
 
+    now = datetime.utcnow()
+
+    anchor = getattr(user, "rate_epoch_anchor_at", None)
+    if not anchor:
+        # Initialize anchor at first use. We don't commit here yet; only if request succeeds.
+        anchor = now
+
+    # Find current epoch boundaries
+    elapsed = now - anchor
+    if elapsed.total_seconds() < 0:
+        # clock skew; reset anchor to now
+        anchor = now
+        elapsed = timedelta(0)
+
+    epoch_len = timedelta(hours=24)
+    k = int(elapsed.total_seconds() // epoch_len.total_seconds())
+    epoch_start = anchor + (k * epoch_len)
+    epoch_end = epoch_start + epoch_len
+
     request_count = db.query(UsageLog).filter(
         UsageLog.user_id == user.id,
-        UsageLog.timestamp >= today_start,
-        UsageLog.timestamp <= today_end,
-        UsageLog.success == True
+        UsageLog.timestamp >= epoch_start,
+        UsageLog.timestamp < epoch_end,
+        UsageLog.success == True,
     ).count()
 
     if request_count >= limit:
-        reset_time = today_end
         detail = {
             "message": f"Daily limit exceeded for {tier} tier.",
             "tier": tier,
             "limit": limit,
             "used": request_count,
             "remaining": 0,
-            "reset_time": reset_time.isoformat(),
+            "reset_time": epoch_end.isoformat() + "Z",
+            "window": "user_epoch_24h",
         }
         if tier == "pro":
             detail["fair_use"] = "Pro includes a soft cap and is subject to fair-use policy for abuse prevention."
@@ -197,7 +219,10 @@ def generate_api_key():
     return "sn_" + secrets.token_urlsafe(32)
 
 def log_usage(user_id: int, endpoint: str, success: bool = True, error_message: str = None, db: Session = None):
-    """Log API usage"""
+    """Log API usage.
+
+    When a user makes their first *successful* request, initialize their 24h epoch anchor.
+    """
     log_entry = UsageLog(
         user_id=user_id,
         endpoint=endpoint,
@@ -205,4 +230,13 @@ def log_usage(user_id: int, endpoint: str, success: bool = True, error_message: 
         error_message=error_message
     )
     db.add(log_entry)
+
+    if success:
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            if user and not getattr(user, "rate_epoch_anchor_at", None):
+                user.rate_epoch_anchor_at = log_entry.timestamp
+        except Exception:
+            pass
+
     db.commit()

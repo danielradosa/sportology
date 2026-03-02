@@ -923,46 +923,66 @@ def get_usage_stats(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get real usage statistics for the authenticated user"""
-    from datetime import date
-    
-    # Use UTC consistently (matches database timestamps)
+    """Get usage statistics for the authenticated user.
+
+    Rate limits use user-specific 24h epochs (see auth.check_rate_limit).
+
+    Returns:
+    - epoch_used / remaining / limit / reset_time (for the quota)
+    - this_month / total (for overall counters)
+    """
+    from datetime import timedelta
+
     now = datetime.utcnow()
-    today = now.date()
-    today_start = datetime.combine(today, datetime.min.time())
-    today_end = datetime.combine(today, datetime.max.time())
-    
-    # This month
-    month_start = datetime.combine(today.replace(day=1), datetime.min.time())
-    
-    # Count ALL requests for today
-    today_count = db.query(UsageLog).filter(
+
+    tier = (current_user.plan_tier or "free").lower()
+    limit_by_tier = {"free": 10, "starter": 100, "pro": 1000}
+    limit = limit_by_tier.get(tier, 10)
+
+    # Epoch boundaries
+    anchor = getattr(current_user, "rate_epoch_anchor_at", None) or now
+    elapsed = now - anchor
+    if elapsed.total_seconds() < 0:
+        anchor = now
+        elapsed = timedelta(0)
+
+    epoch_len = timedelta(hours=24)
+    k = int(elapsed.total_seconds() // epoch_len.total_seconds())
+    epoch_start = anchor + (k * epoch_len)
+    epoch_end = epoch_start + epoch_len
+
+    epoch_used = db.query(UsageLog).filter(
         UsageLog.user_id == current_user.id,
-        UsageLog.timestamp >= today_start,
-        UsageLog.timestamp <= today_end
+        UsageLog.timestamp >= epoch_start,
+        UsageLog.timestamp < epoch_end,
+        UsageLog.success == True,
     ).count()
-    
+
+    remaining = max(0, limit - epoch_used)
+
+    # This month / total (all logs)
+    month_start = datetime(now.year, now.month, 1)
+
     month_count = db.query(UsageLog).filter(
         UsageLog.user_id == current_user.id,
         UsageLog.timestamp >= month_start,
-        UsageLog.timestamp <= today_end
+        UsageLog.timestamp <= now,
     ).count()
-    
+
     total_count = db.query(UsageLog).filter(
         UsageLog.user_id == current_user.id
     ).count()
-    
-    tier = (current_user.plan_tier or "free").lower()
-    limit_by_tier = {"free": 10, "starter": 100, "pro": 1000}
 
     return JSONResponse(
         content={
-            "today": today_count,
+            "epoch_used": epoch_used,
+            "remaining": remaining,
+            "limit": limit,
+            "tier": tier,
+            "reset_time": epoch_end.isoformat() + "Z",
             "this_month": month_count,
             "total": total_count,
-            "tier": tier,
-            "limit": limit_by_tier.get(tier, 10),
-            "reset_time": today_end.isoformat()
+            "window": "user_epoch_24h",
         },
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",

@@ -20,6 +20,9 @@ class User(Base):
     plan_tier = Column(String(20), default="free", nullable=False)
     plan_expires_at = Column(DateTime, nullable=True)
 
+    # rate limit epoch anchor (per user)
+    rate_epoch_anchor_at = Column(DateTime, nullable=True)
+
     # crypto payment identity (optional)
     wallet_address = Column(String(64), unique=True, index=True, nullable=True)
     wallet_link_nonce = Column(String(64), nullable=True)
@@ -175,6 +178,15 @@ def ensure_schema_updates():
         try:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE users ADD COLUMN wallet_link_nonce VARCHAR(64)"))
+        except Exception:
+            pass
+
+    if "rate_epoch_anchor_at" not in cols:
+        try:
+            db_url = str(engine.url)
+            coltype = "TIMESTAMP" if db_url.startswith("postgres") else "DATETIME"
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN rate_epoch_anchor_at {coltype}"))
         except Exception:
             pass
 
