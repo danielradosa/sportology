@@ -3,7 +3,7 @@ import {
   Card,
   Row,
   Col,
-  Grid,
+
   Button,
   Table,
   Tag,
@@ -41,7 +41,6 @@ import { ApiError } from '../services/apiClient'
 import { BrowserProvider, Contract, parseUnits } from 'ethers'
 
 const { Title, Text } = Typography
-const { useBreakpoint } = Grid
 
 function Dashboard() {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
@@ -58,7 +57,6 @@ function Dashboard() {
 
   const { accessToken } = useAuthStore()
   const { user } = useAuth()
-  const screens = useBreakpoint()
 
   const { isConnected, stats, requestStats, error: wsError } = useWebSocket({
     autoConnect: true,
@@ -356,9 +354,9 @@ function Dashboard() {
           description={tier === 'pro' ? 'Pro includes unlimited API keys and a 1000 / day soft cap with fair-use policy.' : undefined}
         />
 
-        <Row gutter={[16, 16]} wrap={!screens.md}>
-          {/* Left: API keys + stats */}
-          <Col xs={24} md={14} lg={14} className="col-shrink">
+        {/* Stats row should span full width */}
+        <Row gutter={[16, 16]}>
+          <Col xs={24} className="col-shrink">
             <Space className="page-stack" direction="vertical" size={16} style={{ width: '100%' }}>
               <Row gutter={[16, 16]}>
                 <Col xs={24} sm={8}>
@@ -419,39 +417,43 @@ function Dashboard() {
                   description={wsError}
                 />
               )}
-
-              <Card
-                title={
-                  <Space>
-                    <KeyOutlined />
-                    <span>API Keys</span>
-                    <Badge count={apiKeys.length} style={{ backgroundColor: '#1890ff' }} />
-                  </Space>
-                }
-                extra={
-                  <Button type='primary' icon={<PlusOutlined />} onClick={() => setIsCreateModalOpen(true)}>
-                    Create API Key
-                  </Button>
-                }
-              >
-                {loading ? (
-                  <Skeleton active paragraph={{ rows: 6 }} />
-                ) : apiKeys.length > 0 ? (
-                  <Table dataSource={apiKeys} columns={columns} rowKey='id' pagination={false} scroll={{ x: 760 }} />
-                ) : (
-                  <Alert
-                    message='No API Keys'
-                    description='You have not created any API keys yet.'
-                    type='info'
-                    showIcon
-                    action={<Button type='primary' size='small' onClick={() => setIsCreateModalOpen(true)}>Create first key</Button>}
-                  />
-                )}
-              </Card>
             </Space>
           </Col>
+        </Row>
 
-          {/* Right: Subscription */}
+        {/* Main content row: API keys (60%) + subscription (40%) */}
+        <Row gutter={[16, 16]}>
+          <Col xs={24} md={14} lg={14} className="col-shrink">
+            <Card
+              title={
+                <Space>
+                  <KeyOutlined />
+                  <span>API Keys</span>
+                  <Badge count={apiKeys.length} style={{ backgroundColor: '#1890ff' }} />
+                </Space>
+              }
+              extra={
+                <Button type='primary' icon={<PlusOutlined />} onClick={() => setIsCreateModalOpen(true)}>
+                  Create API Key
+                </Button>
+              }
+            >
+              {loading ? (
+                <Skeleton active paragraph={{ rows: 6 }} />
+              ) : apiKeys.length > 0 ? (
+                <Table dataSource={apiKeys} columns={columns} rowKey='id' pagination={false} scroll={{ x: 760 }} />
+              ) : (
+                <Alert
+                  message='No API Keys'
+                  description='You have not created any API keys yet.'
+                  type='info'
+                  showIcon
+                  action={<Button type='primary' size='small' onClick={() => setIsCreateModalOpen(true)}>Create first key</Button>}
+                />
+              )}
+            </Card>
+          </Col>
+
           <Col xs={24} md={10} lg={10} className="col-shrink">
             <Card className="side-card" title="Subscription (USDC on Polygon)">
               <div className="card-stack">
