@@ -349,7 +349,7 @@ function Dashboard() {
 
         <Row gutter={[16, 16]}>
           {/* Left: API keys + stats */}
-          <Col xs={24} lg={14}>
+          <Col xs={24} md={14} lg={14}>
             <Space className="page-stack" direction="vertical" size={16} style={{ width: '100%' }}>
               <Row gutter={[16, 16]}>
                 <Col xs={24} sm={8}>
@@ -443,7 +443,7 @@ function Dashboard() {
           </Col>
 
           {/* Right: Subscription */}
-          <Col xs={24} lg={10}>
+          <Col xs={24} md={10} lg={10}>
             <Card className="side-card" title="Subscription (USDC on Polygon)">
               <div className="card-stack">
                 <Alert
