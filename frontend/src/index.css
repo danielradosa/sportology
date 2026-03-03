@@ -99,6 +99,17 @@ body {
   margin: 0 !important;
 }
 
+/* Consistent vertical rhythm inside cards too */
+.card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card-stack .ant-alert {
+  margin: 0 !important;
+}
+
 /* Allow inline button groups to wrap on narrow widths */
 .ant-space {
   flex-wrap: wrap;

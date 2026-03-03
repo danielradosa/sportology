@@ -730,8 +730,9 @@ export default function Analyzer() {
                             okButtonProps={{ danger: true }}
                             cancelText="Cancel"
                             onConfirm={clearHistory}
+                            disabled={(history?.length || 0) === 0}
                         >
-                            <Button danger>
+                            <Button danger disabled={(history?.length || 0) === 0}>
                                 Clear history
                             </Button>
                         </Popconfirm>

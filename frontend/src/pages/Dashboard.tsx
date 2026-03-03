@@ -411,8 +411,8 @@ function Dashboard() {
         />
       )}
 
-      <Card style={{ marginBottom: 16 }} title="Subscription (USDC on Polygon)">
-        <Space direction="vertical" style={{ width: '100%' }} size={10}>
+      <Card title="Subscription (USDC on Polygon)">
+        <div className="card-stack">
           <Alert
             type="info"
             showIcon
@@ -496,7 +496,7 @@ function Dashboard() {
               description="We verify payments by matching the sender address to your linked wallet, then checking the USDC transfer amount (19 or 49) to the treasury wallet."
             />
           )}
-        </Space>
+        </div>
       </Card>
 
       <Card
