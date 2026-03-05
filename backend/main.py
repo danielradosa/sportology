@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles # type: ignore
 from fastapi.responses import FileResponse, JSONResponse, Response # type: ignore
 from pydantic import BaseModel, EmailStr, Field # type: ignore
 from sqlalchemy.orm import Session # type: ignore
-from sqlalchemy import or_, func # type: ignore
+from sqlalchemy import or_, and_, func # type: ignore
 from datetime import date, datetime, timedelta
 from fastapi import WebSocket, WebSocketDisconnect # type: ignore
 from typing import List, Optional
@@ -1256,9 +1256,17 @@ def search_players(
         q_raw = q.strip()
         q_norm = normalize_name(q_raw)
 
+        # Token-based match on normalized name so "Federer Roger" still matches "Roger Federer",
+        # and so users can type without accents/punctuation.
+        tokens = [t for t in q_norm.split(" ") if t]
+        if tokens:
+            norm_token_filter = and_(*[Player.name_norm.ilike(f"%{t}%") for t in tokens])
+        else:
+            norm_token_filter = Player.name_norm.ilike(f"%{q_norm}%")
+
         query = query.filter(
             or_(
-                Player.name_norm.ilike(f"%{q_norm}%"),
+                norm_token_filter,
                 Player.name.ilike(f"%{q_raw}%"),
             )
         )
@@ -1295,9 +1303,16 @@ def suggest_players(
     if q:
         q_raw = q.strip()
         q_norm = normalize_name(q_raw)
+
+        tokens = [t for t in q_norm.split(" ") if t]
+        if tokens:
+            norm_token_filter = and_(*[Player.name_norm.ilike(f"%{t}%") for t in tokens])
+        else:
+            norm_token_filter = Player.name_norm.ilike(f"%{q_norm}%")
+
         query = query.filter(
             or_(
-                Player.name_norm.ilike(f"%{q_norm}%"),
+                norm_token_filter,
                 Player.name.ilike(f"%{q_raw}%"),
             )
         )
