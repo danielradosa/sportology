@@ -1133,11 +1133,32 @@ def get_analysis_history(
     sport: str = "",
     start_date: str = "",
     end_date: str = "",
+    confidence: str = "",
+    limit: int = 40,
+    cursor_created_at: str = "",
+    cursor_id: int = 0,
     db: Session = Depends(get_db)
 ):
+    """Cursor-paginated analysis history.
+
+    Returns a page of items plus an optional next_cursor.
+
+    Cursor is (created_at, id) with ordering (created_at desc, id desc).
+
+    Query params:
+      - confidence: comma-separated values (weak, moderate, strong)
+      - limit: page size (max 200)
+      - cursor_created_at: ISO datetime string
+      - cursor_id: integer
+    """
+
+    limit = max(1, min(int(limit or 40), 200))
+
     query = db.query(AnalysisHistory).filter(AnalysisHistory.user_id == current_user.id)
+
     if sport:
         query = query.filter(AnalysisHistory.sport == sport)
+
     if q:
         q_raw = q.strip()
         query = query.filter(
@@ -1146,13 +1167,54 @@ def get_analysis_history(
                 AnalysisHistory.player2_name.ilike(f"%{q_raw}%"),
             )
         )
+
     if start_date:
         query = query.filter(AnalysisHistory.match_date >= start_date)
     if end_date:
         query = query.filter(AnalysisHistory.match_date <= end_date)
 
-    rows = query.order_by(AnalysisHistory.created_at.desc()).limit(200).all()
-    return [
+    if confidence:
+        raw = [c.strip().lower() for c in confidence.split(",") if c.strip()]
+        tokens: list[str] = []
+        for c in raw:
+            if c in {"weak", "low"}:
+                tokens.extend(["weak", "low"])
+            elif c in {"moderate", "med", "medium"}:
+                tokens.append("moderate")
+            elif c in {"strong", "high"}:
+                tokens.append("strong")
+        tokens = sorted(set(tokens))
+        if tokens:
+            lc = func.lower(AnalysisHistory.confidence)
+            query = query.filter(or_(*[lc.like(f"%{t}%") for t in tokens]))
+
+    # Cursor condition (created_at desc, id desc)
+    if cursor_created_at and cursor_id:
+        from datetime import datetime
+
+        try:
+            c_at = datetime.fromisoformat(cursor_created_at)
+            c_id = int(cursor_id)
+            query = query.filter(
+                or_(
+                    AnalysisHistory.created_at < c_at,
+                    and_(AnalysisHistory.created_at == c_at, AnalysisHistory.id < c_id),
+                )
+            )
+        except Exception:
+            # Invalid cursor: ignore and treat as first page
+            pass
+
+    rows = (
+        query.order_by(AnalysisHistory.created_at.desc(), AnalysisHistory.id.desc())
+        .limit(limit + 1)
+        .all()
+    )
+
+    has_more = len(rows) > limit
+    page = rows[:limit]
+
+    items = [
         {
             "id": r.id,
             "sport": r.sport,
@@ -1163,10 +1225,20 @@ def get_analysis_history(
             "winner_prediction": r.winner_prediction,
             "bet_size": r.bet_size,
             "score_difference": r.score_difference,
-            "created_at": r.created_at.isoformat(),
+            "created_at": r.created_at.isoformat() if r.created_at else None,
         }
-        for r in rows
+        for r in page
     ]
+
+    next_cursor = None
+    if has_more and page:
+        last = page[-1]
+        next_cursor = {
+            "created_at": last.created_at.isoformat() if last.created_at else None,
+            "id": last.id,
+        }
+
+    return {"items": items, "next_cursor": next_cursor}
 
 
 @app.delete("/api/v1/analysis-history")
@@ -1176,16 +1248,18 @@ def clear_analysis_history(
     sport: str = "",
     start_date: str = "",
     end_date: str = "",
+    confidence: str = "",
     db: Session = Depends(get_db),
 ):
     """Delete analysis history entries for the current user.
 
-    If q/sport/start_date/end_date are provided, only matching rows are deleted.
+    If q/sport/start_date/end_date/confidence are provided, only matching rows are deleted.
     """
     query = db.query(AnalysisHistory).filter(AnalysisHistory.user_id == current_user.id)
 
     if sport:
         query = query.filter(AnalysisHistory.sport == sport)
+
     if q:
         q_raw = q.strip()
         query = query.filter(
@@ -1194,10 +1268,26 @@ def clear_analysis_history(
                 AnalysisHistory.player2_name.ilike(f"%{q_raw}%"),
             )
         )
+
     if start_date:
         query = query.filter(AnalysisHistory.match_date >= start_date)
     if end_date:
         query = query.filter(AnalysisHistory.match_date <= end_date)
+
+    if confidence:
+        raw = [c.strip().lower() for c in confidence.split(",") if c.strip()]
+        tokens: list[str] = []
+        for c in raw:
+            if c in {"weak", "low"}:
+                tokens.extend(["weak", "low"])
+            elif c in {"moderate", "med", "medium"}:
+                tokens.append("moderate")
+            elif c in {"strong", "high"}:
+                tokens.append("strong")
+        tokens = sorted(set(tokens))
+        if tokens:
+            lc = func.lower(AnalysisHistory.confidence)
+            query = query.filter(or_(*[lc.like(f"%{t}%") for t in tokens]))
 
     deleted = query.delete(synchronize_session=False)
     db.commit()

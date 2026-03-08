@@ -86,6 +86,11 @@ export default function Analyzer() {
     const [historyQuery, setHistoryQuery] = useState('')
     const [historySport, setHistorySport] = useState('')
     const [historyRange, setHistoryRange] = useState<any>(null)
+    const [historyConfidence, setHistoryConfidence] = useState<string[]>([])
+
+    // Cursor pagination state
+    const [historyCursor, setHistoryCursor] = useState<{ created_at: string, id: number } | null>(null)
+    const [historyHasMore, setHistoryHasMore] = useState(false)
 
     // History detail modal
     const [historyModalOpen, setHistoryModalOpen] = useState(false)
@@ -309,8 +314,9 @@ export default function Analyzer() {
         return value ? <Tag>{value}</Tag> : null
     }
 
-    const loadHistory = async () => {
+    const loadHistory = async (opts?: { reset?: boolean }) => {
         if (!accessToken) return
+        const reset = !!opts?.reset
         setHistoryLoading(true)
         try {
             const params = new URLSearchParams()
@@ -318,13 +324,30 @@ export default function Analyzer() {
             if (historySport) params.append('sport', historySport)
             if (historyRange?.[0]) params.append('start_date', historyRange[0].format('YYYY-MM-DD'))
             if (historyRange?.[1]) params.append('end_date', historyRange[1].format('YYYY-MM-DD'))
+            if (historyConfidence?.length) params.append('confidence', historyConfidence.join(','))
+
+            // Cursor should only be applied when appending
+            const cursor = reset ? null : historyCursor
+            if (cursor?.created_at && cursor?.id) {
+                params.append('cursor_created_at', cursor.created_at)
+                params.append('cursor_id', String(cursor.id))
+            }
+            params.append('limit', '40')
 
             const res = await fetch(`/api/v1/analysis-history?${params.toString()}`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
             })
             if (!res.ok) throw new Error('Failed')
             const json = await res.json()
-            setHistory(json)
+
+            const items = Array.isArray(json?.items) ? json.items : []
+            const next = json?.next_cursor && json.next_cursor.created_at && json.next_cursor.id
+                ? { created_at: json.next_cursor.created_at, id: Number(json.next_cursor.id) }
+                : null
+
+            setHistory((prev) => reset ? items : [...prev, ...items])
+            setHistoryCursor(next)
+            setHistoryHasMore(!!next)
         } catch {
             // ignore
         } finally {
@@ -364,6 +387,7 @@ export default function Analyzer() {
             if (historySport) params.append('sport', historySport)
             if (historyRange?.[0]) params.append('start_date', historyRange[0].format('YYYY-MM-DD'))
             if (historyRange?.[1]) params.append('end_date', historyRange[1].format('YYYY-MM-DD'))
+            if (historyConfidence?.length) params.append('confidence', historyConfidence.join(','))
 
             const res = await fetch(`/api/v1/analysis-history?${params.toString()}`, {
                 method: 'DELETE',
@@ -372,15 +396,23 @@ export default function Analyzer() {
             if (!res.ok) throw new Error('Failed to clear history')
             const json = await res.json()
             message.success(`Deleted ${json.deleted || 0} history entr${(json.deleted || 0) === 1 ? 'y' : 'ies'}`)
-            await loadHistory()
+            setHistory([])
+            setHistoryCursor(null)
+            setHistoryHasMore(false)
+            await loadHistory({ reset: true })
         } catch (e: any) {
             message.error(e?.message || 'Failed to clear history')
         }
     }
 
     useEffect(() => {
-        loadHistory()
-    }, [accessToken, historyQuery, historySport, historyRange])
+        // Filter/sort changes invalidate cursor
+        setHistory([])
+        setHistoryCursor(null)
+        setHistoryHasMore(false)
+        loadHistory({ reset: true })
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [accessToken, historyQuery, historySport, historyRange, historyConfidence])
 
     const onFinish = async (values: AnalyzeFormValues) => {
         setLoading(true)
@@ -403,7 +435,10 @@ export default function Analyzer() {
             const data = await analyzeMatch(payload, apiKey)
             setResult(data)
             message.success("Analysis complete")
-            await loadHistory()
+            setHistory([])
+            setHistoryCursor(null)
+            setHistoryHasMore(false)
+            await loadHistory({ reset: true })
             if (accessToken) {
                 const stats = await getUsageStats(accessToken)
                 setUsage(stats)
@@ -681,6 +716,20 @@ export default function Analyzer() {
                         <Select.Option value="table-tennis">Table Tennis</Select.Option>
                     </Select>
 
+                    <Select
+                        mode="multiple"
+                        placeholder="Confidence"
+                        value={historyConfidence}
+                        onChange={(vals) => setHistoryConfidence(vals)}
+                        allowClear
+                        style={{ width: '100%' }}
+                        options={[
+                            { value: 'weak', label: 'Weak' },
+                            { value: 'moderate', label: 'Moderate' },
+                            { value: 'strong', label: 'Strong' },
+                        ]}
+                    />
+
                     <Space wrap>
                         <Button onClick={() => {
                             const rows = history.map((h) => ({
@@ -743,7 +792,7 @@ export default function Analyzer() {
                         rowKey="id"
                         dataSource={history}
                         loading={historyLoading}
-                        pagination={{ pageSize: 8 }}
+                        pagination={false}
                         rowClassName={() => 'clickable-row'}
                         onRow={(record) => ({
                             onClick: () => openHistoryDetail(record),
@@ -770,6 +819,15 @@ export default function Analyzer() {
                             },
                         ]}
                     />
+
+                    <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 8 }}>
+                        <Button
+                            onClick={() => loadHistory({ reset: false })}
+                            disabled={!historyHasMore || historyLoading}
+                        >
+                            {historyHasMore ? 'Load more' : 'No more'}
+                        </Button>
+                    </div>
 
                     <Modal
                         title={historyDetail?.analysis
