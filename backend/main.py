@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta
 from fastapi import WebSocket, WebSocketDisconnect # type: ignore
 from typing import List, Optional
 import os
+import asyncio
 from collections import defaultdict
 from sqlalchemy.dialects.postgresql import insert as pg_insert # type: ignore
 import unicodedata, re
@@ -24,6 +25,7 @@ from auth import (
     check_rate_limit, log_usage
 )
 from numerology import analyze_match
+from update_stream import UpdateHub, read_frontend_version
 
 def get_client_ip(req: Request) -> str:
     """Extract client IP from request"""
@@ -114,6 +116,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- Live update stream (deploy notifications) ---
+update_hub = UpdateHub()
+
+@app.on_event("startup")
+async def _start_update_watcher():
+    # Watch frontend/dist/version.txt and broadcast when it changes.
+    # This is best-effort; if the file doesn't exist (dev), clients just won't get deploy prompts.
+    try:
+        asyncio.create_task(update_hub.watch_frontend_version(frontend_dist_path))
+    except Exception:
+        pass
+
+@app.websocket("/ws/updates")
+async def ws_updates(ws: WebSocket):
+    await update_hub.connect(ws)
+    try:
+        # Always send current deployed version immediately.
+        v = read_frontend_version(frontend_dist_path)
+        if v:
+            await update_hub.send(ws, {"type": "version", "version": v})
+
+        while True:
+            # Keep the socket alive. (We don't currently need client messages.)
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        update_hub.disconnect(ws)
+    except Exception:
+        update_hub.disconnect(ws)
 
 # Pydantic models
 class UserCreate(BaseModel):

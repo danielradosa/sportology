@@ -1,8 +1,9 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
-import { Layout, Skeleton } from 'antd'
+import { Layout, Skeleton, Modal, Typography } from 'antd'
 import AppHeader from './components/Layout/AppHeader'
 import { AuthProvider } from './hooks/useAuth'
+import { APP_VERSION } from './version'
 
 const Home = lazy(() => import('./pages/Home'))
 const Login = lazy(() => import('./pages/Login'))
@@ -13,6 +14,7 @@ const Bot = lazy(() => import('./pages/Bot'))
 const AdminPanel = lazy(() => import('./pages/AdminPanel'))
 
 const { Content, Footer } = Layout
+const { Text } = Typography
 
 function RouteFallback() {
   return (
@@ -23,6 +25,56 @@ function RouteFallback() {
 }
 
 function App() {
+  const [updateOpen, setUpdateOpen] = useState(false)
+  const [serverVersion, setServerVersion] = useState<string>('')
+  const wsRef = useRef<WebSocket | null>(null)
+
+  const shouldPrompt = useMemo(() => {
+    return !!serverVersion && serverVersion !== APP_VERSION
+  }, [serverVersion])
+
+  useEffect(() => {
+    // Connect to backend update stream.
+    // Backend sends current deployed frontend version and broadcasts when it changes.
+    try {
+      const wsUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/updates`
+      const ws = new WebSocket(wsUrl)
+      wsRef.current = ws
+
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data)
+          if (msg?.type === 'version' && typeof msg?.version === 'string') {
+            setServerVersion(msg.version)
+          }
+          if (msg?.type === 'deploy' && typeof msg?.version === 'string') {
+            setServerVersion(msg.version)
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      ws.onclose = () => {
+        wsRef.current = null
+      }
+
+      return () => {
+        try {
+          ws.close()
+        } catch {
+          // ignore
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  useEffect(() => {
+    if (shouldPrompt) setUpdateOpen(true)
+  }, [shouldPrompt])
+
   return (
     <AuthProvider>
       <Router>
@@ -49,6 +101,24 @@ function App() {
               Daniel Radosa
             </a>
           </Footer>
+
+          <Modal
+            title='Update available'
+            open={updateOpen}
+            okText='Refresh'
+            cancelText='Later'
+            onOk={() => window.location.reload()}
+            onCancel={() => setUpdateOpen(false)}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <Text>A new version of the site was deployed.</Text>
+              <Text type='secondary'>
+                Current: {APP_VERSION || 'unknown'}
+                <br />
+                New: {serverVersion || 'unknown'}
+              </Text>
+            </div>
+          </Modal>
         </Layout>
       </Router>
     </AuthProvider>
